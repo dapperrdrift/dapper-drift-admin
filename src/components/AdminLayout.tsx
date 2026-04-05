@@ -17,7 +17,7 @@ export default function AdminLayout() {
     );
   }
 
-  if (!user) return <Navigate to="/login?error=session_expired" replace />;
+  if (!user) return <Navigate to="/login" replace />;
   if (!isAdmin) return <Navigate to="/login?error=access_denied" replace />;
 
   return (

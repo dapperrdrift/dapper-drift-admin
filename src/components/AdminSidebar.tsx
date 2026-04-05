@@ -34,7 +34,7 @@ export function AdminSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         {!collapsed && (
-          <img src={logo} alt="Dapperr Drift" className="h-8 w-auto" />
+          <img src={logo} alt="Dapperr Drift" className="max-w-[75%] h-auto w-auto" />
         )}
         {collapsed && <span className="text-sidebar-primary font-bold text-lg">DD</span>}
       </SidebarHeader>
