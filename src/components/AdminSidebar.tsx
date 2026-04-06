@@ -1,9 +1,8 @@
 import {
-  LayoutDashboard, Package, Warehouse, ShoppingCart, Ticket,
+  LayoutDashboard, Package, FolderTree, Warehouse, ShoppingCart, Ticket,
   Image, MessageSquareQuote, Mail, LogOut,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
@@ -16,6 +15,7 @@ import logo from "@/assets/logo.svg";
 const navItems = [
   { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
   { title: "Products", url: "/admin/products", icon: Package },
+  { title: "Categories", url: "/admin/categories", icon: FolderTree },
   { title: "Inventory", url: "/admin/inventory", icon: Warehouse },
   { title: "Orders", url: "/admin/orders", icon: ShoppingCart },
   { title: "Coupons", url: "/admin/coupons", icon: Ticket },
@@ -27,7 +27,6 @@ const navItems = [
 export function AdminSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const location = useLocation();
   const { signOut } = useAuth();
 
   return (

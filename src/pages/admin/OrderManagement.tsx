@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,32 +8,77 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Eye } from "lucide-react";
+import { Eye, Search } from "lucide-react";
+import { AdminTablePagination } from "@/components/AdminTablePagination";
 
 const STATUSES = ["placed", "confirmed", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"] as const;
+const PAGE_SIZE = 10;
 
 export default function OrderManagement() {
   const [orders, setOrders] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [trackingId, setTrackingId] = useState("");
   const [carrierName, setCarrierName] = useState("");
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const fetchOrders = async () => {
-    let query = supabase.from("orders").select("*");
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    let query = supabase.from("orders").select("*", { count: "exact" });
+
     if (filterStatus !== "all") query = query.eq("status", filterStatus as any);
+
+    if (debouncedSearch) {
+      const term = debouncedSearch.replace(/,/g, " ");
+      const isUuid = /^[0-9a-fA-F-]{32,36}$/.test(term);
+      if (isUuid) {
+        query = query.eq("id", term);
+      } else if ((STATUSES as readonly string[]).includes(term)) {
+        query = query.eq("status", term as any);
+      } else {
+        query = query.or(`tracking_id.ilike.%${term}%,carrier_name.ilike.%${term}%`);
+      }
+    }
+
     if (sortBy === "price_asc") query = query.order("total_amount", { ascending: true });
     else if (sortBy === "price_desc") query = query.order("total_amount", { ascending: false });
     else query = query.order("created_at", { ascending: false });
-    const { data } = await query;
-    setOrders(data || []);
-    setLoading(false);
-  };
 
-  useEffect(() => { fetchOrders(); }, [filterStatus, sortBy]);
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data, error, count } = await query.range(from, to);
+
+    if (error) {
+      toast({ title: "Failed to load orders", description: error.message, variant: "destructive" });
+      setOrders([]);
+      setTotalCount(0);
+      setLoading(false);
+      return;
+    }
+
+    setOrders(data || []);
+    setTotalCount(count || 0);
+    setLoading(false);
+  }, [debouncedSearch, filterStatus, page, sortBy, toast]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
 
   const updateStatus = async (orderId: string, newStatus: string) => {
     const payload: any = { status: newStatus, updated_at: new Date().toISOString() };
@@ -47,6 +92,8 @@ export default function OrderManagement() {
     fetchOrders();
     setSelectedOrder(null);
   };
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   if (loading) return (
     <div className="space-y-4">
@@ -73,14 +120,37 @@ export default function OrderManagement() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Orders</h1>
       <div className="flex flex-wrap gap-3">
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <div className="relative flex-1 min-w-[240px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="pl-9"
+            placeholder="Search by tracking ID, carrier, status, or full order UUID..."
+          />
+        </div>
+
+        <Select
+          value={filterStatus}
+          onValueChange={(value) => {
+            setFilterStatus(value);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             {STATUSES.map(s => <SelectItem key={s} value={s} className="capitalize">{s.replace("_", " ")}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={sortBy} onValueChange={setSortBy}>
+
+        <Select
+          value={sortBy}
+          onValueChange={(value) => {
+            setSortBy(value);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Sort" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="newest">Newest First</SelectItem>
@@ -123,6 +193,8 @@ export default function OrderManagement() {
             )}
           </TableBody>
         </Table>
+
+        <AdminTablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
 
       <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>

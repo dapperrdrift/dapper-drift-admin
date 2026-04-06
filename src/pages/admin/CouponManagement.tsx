@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AdminTablePagination } from "@/components/AdminTablePagination";
 
 interface Coupon {
   id: string;
@@ -23,21 +24,42 @@ interface Coupon {
   is_active: boolean;
 }
 
+const PAGE_SIZE = 10;
+
 export default function CouponManagement() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Coupon | null>(null);
   const [form, setForm] = useState({ code: "", discount_type: "flat", discount_value: 0, min_order_value: 0, expiry_date: "", usage_limit: 0 });
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const fetchCoupons = async () => {
-    const { data } = await supabase.from("coupons").select("*").order("created_at", { ascending: false });
-    setCoupons(data || []);
-    setLoading(false);
-  };
+  const fetchCoupons = useCallback(async () => {
+    setLoading(true);
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data, error, count } = await supabase
+      .from("coupons")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
-  useEffect(() => { fetchCoupons(); }, []);
+    if (error) {
+      toast({ title: "Failed to load coupons", description: error.message, variant: "destructive" });
+      setCoupons([]);
+      setTotalCount(0);
+      setLoading(false);
+      return;
+    }
+
+    setCoupons(data || []);
+    setTotalCount(count || 0);
+    setLoading(false);
+  }, [page, toast]);
+
+  useEffect(() => { fetchCoupons(); }, [fetchCoupons]);
 
   const openCreate = () => {
     setEditing(null);
@@ -86,8 +108,14 @@ export default function CouponManagement() {
   const handleDelete = async (id: string) => {
     await supabase.from("coupons").delete().eq("id", id);
     toast({ title: "Coupon deleted" });
-    fetchCoupons();
+    if (coupons.length === 1 && page > 1) {
+      setPage((prev) => prev - 1);
+    } else {
+      fetchCoupons();
+    }
   };
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   if (loading) return (
     <div className="space-y-4">
@@ -159,6 +187,8 @@ export default function CouponManagement() {
             )}
           </TableBody>
         </Table>
+
+        <AdminTablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

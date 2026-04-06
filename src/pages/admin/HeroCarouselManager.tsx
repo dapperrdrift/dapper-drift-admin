@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Pencil, Trash2, Upload, X, Loader2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { uploadOptimizedImage } from "@/lib/optimizedUpload";
 
 interface HeroSlide {
   id: string;
@@ -62,27 +63,33 @@ export default function HeroCarouselManager() {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Max file size is 5MB.", variant: "destructive" });
+    if (file.size > 8 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Max file size is 8MB.", variant: "destructive" });
       return;
     }
 
     setUploading(true);
-    const fileExt = file.name.split(".").pop();
-    const filePath = `${crypto.randomUUID()}.${fileExt}`;
 
-    const { error } = await supabase.storage.from("hero-images").upload(filePath, file);
-    if (error) {
-      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    try {
+      const publicUrl = await uploadOptimizedImage(file, {
+        bucket: "hero-images",
+        folder: "hero",
+      });
+      setForm(prev => ({ ...prev, image_url: publicUrl }));
+      setPreviewUrl(publicUrl);
+      toast({ title: "Image optimized and uploaded" });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Unexpected error",
+        variant: "destructive",
+      });
+    } finally {
       setUploading(false);
-      return;
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
-
-    const { data: urlData } = supabase.storage.from("hero-images").getPublicUrl(filePath);
-    setForm(prev => ({ ...prev, image_url: urlData.publicUrl }));
-    setPreviewUrl(urlData.publicUrl);
-    setUploading(false);
-    toast({ title: "Image uploaded" });
   };
 
   const removeImage = () => {

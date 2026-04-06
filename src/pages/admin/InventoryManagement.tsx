@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { Search } from "lucide-react";
+import { AdminTablePagination } from "@/components/AdminTablePagination";
 
 interface Variant {
   id: string;
@@ -20,26 +21,106 @@ interface Variant {
   product_name?: string;
 }
 
+const PAGE_SIZE = 10;
+
 export default function InventoryManagement() {
   const [variants, setVariants] = useState<Variant[]>([]);
   const [adjustments, setAdjustments] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterSize, setFilterSize] = useState("all");
   const [filterColor, setFilterColor] = useState("all");
   const [sortStock, setSortStock] = useState("default");
+  const [sizes, setSizes] = useState<string[]>([]);
+  const [colors, setColors] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const fetchVariants = async () => {
-    const { data: variantsData } = await supabase.from("variants").select("*");
-    const { data: productsData } = await supabase.from("products").select("id, name");
-    const productMap = Object.fromEntries((productsData || []).map(p => [p.id, p.name]));
-    const enriched = (variantsData || []).map(v => ({ ...v, product_name: productMap[v.product_id] || "Unknown" }));
-    setVariants(enriched);
-    setLoading(false);
-  };
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 300);
 
-  useEffect(() => { fetchVariants(); }, []);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const fetchFilterOptions = useCallback(async () => {
+    const { data, error } = await supabase.from("variants").select("size, color");
+    if (error) {
+      toast({ title: "Failed to load filters", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    const uniqueSizes = [...new Set((data || []).map((item) => item.size).filter(Boolean))] as string[];
+    const uniqueColors = [...new Set((data || []).map((item) => item.color).filter(Boolean))] as string[];
+    setSizes(uniqueSizes);
+    setColors(uniqueColors);
+  }, [toast]);
+
+  const fetchVariants = useCallback(async () => {
+    setLoading(true);
+
+    let query = supabase
+      .from("variants")
+      .select("id, product_id, size, color, sku, stock_quantity, low_stock_threshold, products(name)", { count: "exact" });
+
+    if (filterSize !== "all") query = query.eq("size", filterSize);
+    if (filterColor !== "all") query = query.eq("color", filterColor);
+
+    if (debouncedSearch) {
+      const term = debouncedSearch.replace(/,/g, " ");
+      const { data: matchingProducts } = await supabase
+        .from("products")
+        .select("id")
+        .ilike("name", `%${term}%`)
+        .limit(250);
+
+      const matchingProductIds = (matchingProducts || []).map((product) => product.id);
+      const searchConditions = [`sku.ilike.%${term}%`, `size.ilike.%${term}%`, `color.ilike.%${term}%`];
+
+      if (matchingProductIds.length > 0) {
+        searchConditions.push(`product_id.in.(${matchingProductIds.join(",")})`);
+      }
+
+      query = query.or(searchConditions.join(","));
+    }
+
+    if (sortStock === "low") query = query.order("stock_quantity", { ascending: true });
+    else if (sortStock === "high") query = query.order("stock_quantity", { ascending: false });
+    else query = query.order("created_at", { ascending: false });
+
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { data, error, count } = await query.range(from, to);
+    if (error) {
+      toast({ title: "Failed to load inventory", description: error.message, variant: "destructive" });
+      setVariants([]);
+      setTotalCount(0);
+      setLoading(false);
+      return;
+    }
+
+    const enriched = (data || []).map((variant: any) => ({
+      ...variant,
+      product_name: variant.products?.name || "Unknown",
+    }));
+    setVariants(enriched);
+    setTotalCount(count || 0);
+    setLoading(false);
+  }, [debouncedSearch, filterColor, filterSize, page, sortStock, toast]);
+
+  useEffect(() => {
+    fetchFilterOptions();
+  }, [fetchFilterOptions]);
+
+  useEffect(() => {
+    fetchVariants();
+  }, [fetchVariants]);
 
   const adjustStock = async (v: Variant) => {
     const adj = parseInt(adjustments[v.id] || "0");
@@ -59,14 +140,7 @@ export default function InventoryManagement() {
     fetchVariants();
   };
 
-  let filtered = variants;
-  if (filterSize !== "all") filtered = filtered.filter(v => v.size === filterSize);
-  if (filterColor !== "all") filtered = filtered.filter(v => v.color === filterColor);
-  if (sortStock === "low") filtered = [...filtered].sort((a, b) => a.stock_quantity - b.stock_quantity);
-  if (sortStock === "high") filtered = [...filtered].sort((a, b) => b.stock_quantity - a.stock_quantity);
-
-  const sizes = [...new Set(variants.map(v => v.size))];
-  const colors = [...new Set(variants.map(v => v.color))];
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   if (loading) return (
     <div className="space-y-4">
@@ -95,21 +169,51 @@ export default function InventoryManagement() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Inventory</h1>
       <div className="flex flex-wrap gap-3">
-        <Select value={filterSize} onValueChange={setFilterSize}>
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="pl-9"
+            placeholder="Search SKU, product, size, or color..."
+          />
+        </div>
+
+        <Select
+          value={filterSize}
+          onValueChange={(value) => {
+            setFilterSize(value);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Size" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Sizes</SelectItem>
             {sizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={filterColor} onValueChange={setFilterColor}>
+
+        <Select
+          value={filterColor}
+          onValueChange={(value) => {
+            setFilterColor(value);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Color" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Colors</SelectItem>
             {colors.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={sortStock} onValueChange={setSortStock}>
+
+        <Select
+          value={sortStock}
+          onValueChange={(value) => {
+            setSortStock(value);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Sort by stock" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="default">Default</SelectItem>
@@ -131,7 +235,7 @@ export default function InventoryManagement() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map(v => (
+            {variants.map(v => (
               <TableRow key={v.id} className={v.stock_quantity <= v.low_stock_threshold ? "bg-destructive/5" : ""}>
                 <TableCell className="font-medium">{v.product_name}</TableCell>
                 <TableCell className="text-muted-foreground text-xs">{v.sku}</TableCell>
@@ -157,11 +261,13 @@ export default function InventoryManagement() {
                 </TableCell>
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+            {variants.length === 0 && (
               <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No variants found.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
+
+        <AdminTablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
     </div>
   );

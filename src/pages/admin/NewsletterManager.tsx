@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,33 +10,77 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Send, Users, Download } from "lucide-react";
+import { AdminTablePagination } from "@/components/AdminTablePagination";
+
+const PAGE_SIZE = 10;
 
 export default function NewsletterManager() {
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
+  const [activeCount, setActiveCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const fetchSubscribers = async () => {
-    const { data } = await supabase.from("newsletter_subscribers").select("*").order("subscribed_at", { ascending: false });
+  const fetchSubscribers = useCallback(async () => {
+    setLoading(true);
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const [{ data, error, count }, { count: activeTotal, error: activeError }] = await Promise.all([
+      supabase
+        .from("newsletter_subscribers")
+        .select("*", { count: "exact" })
+        .order("subscribed_at", { ascending: false })
+        .range(from, to),
+      supabase
+        .from("newsletter_subscribers")
+        .select("*", { count: "exact", head: true })
+        .eq("is_active", true),
+    ]);
+
+    if (error) {
+      toast({ title: "Failed to load subscribers", description: error.message, variant: "destructive" });
+      setSubscribers([]);
+      setTotalCount(0);
+      setLoading(false);
+      return;
+    }
+
+    if (activeError) {
+      toast({ title: "Failed to load subscriber stats", description: activeError.message, variant: "destructive" });
+    }
+
     setSubscribers(data || []);
+    setTotalCount(count || 0);
+    setActiveCount(activeTotal || 0);
     setLoading(false);
-  };
+  }, [page, toast]);
 
-  useEffect(() => { fetchSubscribers(); }, []);
+  useEffect(() => { fetchSubscribers(); }, [fetchSubscribers]);
 
-  const activeCount = subscribers.filter(s => s.is_active).length;
+  const exportSubscribers = async () => {
+    const { data, error } = await supabase
+      .from("newsletter_subscribers")
+      .select("email, subscribed_at, is_active")
+      .order("subscribed_at", { ascending: false });
 
-  const exportSubscribers = () => {
-    const csv = "Email,Subscribed At,Active\n" + subscribers.map(s => `${s.email},${s.subscribed_at},${s.is_active}`).join("\n");
+    if (error) {
+      toast({ title: "Export failed", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    const csv = "Email,Subscribed At,Active\n" + (data || []).map(s => `${s.email},${s.subscribed_at},${s.is_active}`).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = "subscribers.csv";
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleSend = async () => {
@@ -48,6 +92,8 @@ export default function NewsletterManager() {
     setBody("");
     setSending(false);
   };
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   if (loading) return (
     <div className="space-y-4">
@@ -130,6 +176,8 @@ export default function NewsletterManager() {
                 )}
               </TableBody>
             </Table>
+
+            <AdminTablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
         </TabsContent>
       </Tabs>

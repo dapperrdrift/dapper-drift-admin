@@ -17,19 +17,25 @@ export type Database = {
       categories: {
         Row: {
           created_at: string
+          description: string | null
           id: string
+          image_url: string | null
           name: string
           slug: string
         }
         Insert: {
           created_at?: string
+          description?: string | null
           id?: string
+          image_url?: string | null
           name: string
           slug: string
         }
         Update: {
           created_at?: string
+          description?: string | null
           id?: string
+          image_url?: string | null
           name?: string
           slug?: string
         }
@@ -409,6 +415,7 @@ export type Database = {
           color: string
           created_at: string
           id: string
+          images: string[]
           low_stock_threshold: number
           price_override: number | null
           product_id: string
@@ -420,6 +427,7 @@ export type Database = {
           color: string
           created_at?: string
           id?: string
+          images?: string[]
           low_stock_threshold?: number
           price_override?: number | null
           product_id: string
@@ -431,6 +439,7 @@ export type Database = {
           color?: string
           created_at?: string
           id?: string
+          images?: string[]
           low_stock_threshold?: number
           price_override?: number | null
           product_id?: string

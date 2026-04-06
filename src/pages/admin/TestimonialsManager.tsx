@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check, X, Star } from "lucide-react";
+import { AdminTablePagination } from "@/components/AdminTablePagination";
 
 interface Testimonial {
   id: string;
@@ -17,21 +17,43 @@ interface Testimonial {
   submitted_at: string;
 }
 
+const PAGE_SIZE = 10;
+
 export default function TestimonialsManager() {
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [filterStatus, setFilterStatus] = useState("all");
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const fetchTestimonials = async () => {
-    let query = supabase.from("testimonials").select("*").order("submitted_at", { ascending: false });
-    if (filterStatus !== "all") query = query.eq("status", filterStatus as any);
-    const { data } = await query;
-    setTestimonials(data || []);
-    setLoading(false);
-  };
+  const fetchTestimonials = useCallback(async () => {
+    setLoading(true);
+    let query = supabase
+      .from("testimonials")
+      .select("*", { count: "exact" })
+      .order("submitted_at", { ascending: false });
 
-  useEffect(() => { fetchTestimonials(); }, [filterStatus]);
+    if (filterStatus !== "all") query = query.eq("status", filterStatus as any);
+
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data, error, count } = await query.range(from, to);
+
+    if (error) {
+      toast({ title: "Failed to load testimonials", description: error.message, variant: "destructive" });
+      setTestimonials([]);
+      setTotalCount(0);
+      setLoading(false);
+      return;
+    }
+
+    setTestimonials(data || []);
+    setTotalCount(count || 0);
+    setLoading(false);
+  }, [filterStatus, page, toast]);
+
+  useEffect(() => { fetchTestimonials(); }, [fetchTestimonials]);
 
   const updateStatus = async (id: string, status: "pending" | "approved" | "rejected") => {
     await supabase.from("testimonials").update({ status }).eq("id", id);
@@ -44,6 +66,8 @@ export default function TestimonialsManager() {
     if (s === "rejected") return "bg-red-100 text-red-700";
     return "bg-yellow-100 text-yellow-700";
   };
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   if (loading) return (
     <div className="space-y-4">
@@ -69,7 +93,13 @@ export default function TestimonialsManager() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Testimonials</h1>
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <Select
+          value={filterStatus}
+          onValueChange={(value) => {
+            setFilterStatus(value);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Filter" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All</SelectItem>
@@ -126,6 +156,8 @@ export default function TestimonialsManager() {
             )}
           </TableBody>
         </Table>
+
+        <AdminTablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
     </div>
   );
