@@ -62,8 +62,6 @@ export default function InventoryManagement() {
   }, [toast]);
 
   const fetchVariants = useCallback(async () => {
-    setLoading(true);
-
     let query = supabase
       .from("variants")
       .select("id, product_id, size, color, sku, stock_quantity, low_stock_threshold, products(name)", { count: "exact" });
@@ -105,7 +103,7 @@ export default function InventoryManagement() {
       return;
     }
 
-    const enriched = (data || []).map((variant: any) => ({
+    const enriched = (data || []).map((variant: Variant & { products?: { name: string } }) => ({
       ...variant,
       product_name: variant.products?.name || "Unknown",
     }));

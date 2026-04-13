@@ -143,8 +143,6 @@ export default function ProductManagement() {
   }, [search]);
 
   const fetchProducts = useCallback(async () => {
-    setLoading(true);
-
     let query = supabase.from("products").select("*", { count: "exact" });
     if (filterCategory !== "all") query = query.eq("category_id", filterCategory);
     if (debouncedSearch) query = query.ilike("name", `%${debouncedSearch}%`);
@@ -509,7 +507,7 @@ export default function ProductManagement() {
     );
   };
 
-  const useProductImagesForVariant = (tempId: string) => {
+  const handleUseProductImagesForVariant = (tempId: string) => {
     if (!form.images.length) {
       toast({ title: "No product images yet", description: "Upload product images first." });
       return;
@@ -1051,7 +1049,7 @@ export default function ProductManagement() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-6 px-2"
-                                onClick={() => useProductImagesForVariant(variant.temp_id)}
+                                onClick={() => handleUseProductImagesForVariant(variant.temp_id)}
                               >
                                 Use Product Images
                               </Button>

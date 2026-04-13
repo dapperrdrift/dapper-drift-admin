@@ -10,19 +10,42 @@ import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Eye, Search } from "lucide-react";
 import { AdminTablePagination } from "@/components/AdminTablePagination";
+import { Constants, type Database } from "@/integrations/supabase/types";
 
-const STATUSES = ["placed", "confirmed", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"] as const;
+type Order = Database["public"]["Tables"]["orders"]["Row"];
+type OrderStatus = Database["public"]["Enums"]["order_status"];
+type OrderUpdate = Database["public"]["Tables"]["orders"]["Update"];
+type FilterStatus = "all" | OrderStatus;
+type SortBy = "newest" | "price_asc" | "price_desc";
+
+const STATUSES = Constants.public.Enums.order_status;
 const PAGE_SIZE = 10;
 
+function isOrderStatus(value: string): value is OrderStatus {
+  return STATUSES.some((status) => status === value);
+}
+
+function isFilterStatus(value: string): value is FilterStatus {
+  return value === "all" || isOrderStatus(value);
+}
+
+function isSortBy(value: string): value is SortBy {
+  return value === "newest" || value === "price_asc" || value === "price_desc";
+}
+
+function formatStatus(status: OrderStatus): string {
+  return status.replace(/_/g, " ");
+}
+
 export default function OrderManagement() {
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [sortBy, setSortBy] = useState("newest");
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
+  const [sortBy, setSortBy] = useState<SortBy>("newest");
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [trackingId, setTrackingId] = useState("");
   const [carrierName, setCarrierName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -38,18 +61,17 @@ export default function OrderManagement() {
   }, [search]);
 
   const fetchOrders = useCallback(async () => {
-    setLoading(true);
     let query = supabase.from("orders").select("*", { count: "exact" });
 
-    if (filterStatus !== "all") query = query.eq("status", filterStatus as any);
+    if (filterStatus !== "all") query = query.eq("status", filterStatus);
 
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/,/g, " ");
       const isUuid = /^[0-9a-fA-F-]{32,36}$/.test(term);
       if (isUuid) {
         query = query.eq("id", term);
-      } else if ((STATUSES as readonly string[]).includes(term)) {
-        query = query.eq("status", term as any);
+      } else if (isOrderStatus(term)) {
+        query = query.eq("status", term);
       } else {
         query = query.or(`tracking_id.ilike.%${term}%,carrier_name.ilike.%${term}%`);
       }
@@ -80,8 +102,8 @@ export default function OrderManagement() {
     fetchOrders();
   }, [fetchOrders]);
 
-  const updateStatus = async (orderId: string, newStatus: string) => {
-    const payload: any = { status: newStatus, updated_at: new Date().toISOString() };
+  const updateStatus = async (orderId: string, newStatus: OrderStatus) => {
+    const payload: OrderUpdate = { status: newStatus, updated_at: new Date().toISOString() };
     if (newStatus === "shipped") {
       payload.tracking_id = trackingId;
       payload.carrier_name = carrierName;
@@ -133,8 +155,10 @@ export default function OrderManagement() {
         <Select
           value={filterStatus}
           onValueChange={(value) => {
-            setFilterStatus(value);
-            setPage(1);
+            if (isFilterStatus(value)) {
+              setFilterStatus(value);
+              setPage(1);
+            }
           }}
         >
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
@@ -147,8 +171,10 @@ export default function OrderManagement() {
         <Select
           value={sortBy}
           onValueChange={(value) => {
-            setSortBy(value);
-            setPage(1);
+            if (isSortBy(value)) {
+              setSortBy(value);
+              setPage(1);
+            }
           }}
         >
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Sort" /></SelectTrigger>
@@ -178,7 +204,7 @@ export default function OrderManagement() {
                 <TableCell>₹{Number(o.total_amount).toLocaleString()}</TableCell>
                 <TableCell>
                   <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">
-                    {o.status.replace("_", " ")}
+                    {formatStatus(o.status)}
                   </span>
                 </TableCell>
                 <TableCell className="text-right">
@@ -207,7 +233,7 @@ export default function OrderManagement() {
                 <div><span className="text-muted-foreground">Amount:</span> ₹{Number(selectedOrder.total_amount).toLocaleString()}</div>
                 <div><span className="text-muted-foreground">Discount:</span> ₹{Number(selectedOrder.discount_amount).toLocaleString()}</div>
                 <div><span className="text-muted-foreground">Shipping:</span> ₹{Number(selectedOrder.shipping_fee).toLocaleString()}</div>
-                <div className="col-span-2"><span className="text-muted-foreground">Status:</span> <span className="capitalize">{selectedOrder.status.replace("_", " ")}</span></div>
+                <div className="col-span-2"><span className="text-muted-foreground">Status:</span> <span className="capitalize">{formatStatus(selectedOrder.status)}</span></div>
                 {selectedOrder.tracking_id && <div className="col-span-2"><span className="text-muted-foreground">Tracking:</span> {selectedOrder.tracking_id} ({selectedOrder.carrier_name})</div>}
               </div>
               {selectedOrder.status !== "delivered" && selectedOrder.status !== "cancelled" && (
@@ -221,11 +247,11 @@ export default function OrderManagement() {
                   ) : null}
                   <div className="flex gap-2 flex-wrap">
                     {STATUSES.filter(s => s !== "cancelled").map((s, i) => {
-                      const currentIdx = STATUSES.indexOf(selectedOrder.status as typeof STATUSES[number]);
+                      const currentIdx = STATUSES.indexOf(selectedOrder.status);
                       if (i !== currentIdx + 1) return null;
                       return (
                         <Button key={s} size="sm" onClick={() => updateStatus(selectedOrder.id, s)} className="capitalize">
-                          Mark as {s.replace("_", " ")}
+                          Mark as {formatStatus(s)}
                         </Button>
                       );
                     })}

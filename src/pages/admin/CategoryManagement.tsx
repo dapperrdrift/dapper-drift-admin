@@ -3,7 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,7 +26,6 @@ interface Category {
   id: string;
   name: string;
   slug: string;
-  description: string | null;
   image_url: string | null;
   created_at: string;
 }
@@ -56,7 +54,6 @@ export default function CategoryManagement() {
   const [form, setForm] = useState({
     name: "",
     slug: "",
-    description: "",
     image_url: "",
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -72,8 +69,6 @@ export default function CategoryManagement() {
   }, [search]);
 
   const fetchCategories = useCallback(async () => {
-    setLoading(true);
-
     let query = supabase
       .from("categories")
       .select("*", { count: "exact" })
@@ -81,7 +76,7 @@ export default function CategoryManagement() {
 
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/,/g, " ");
-      query = query.or(`name.ilike.%${term}%,slug.ilike.%${term}%,description.ilike.%${term}%`);
+      query = query.or(`name.ilike.%${term}%,slug.ilike.%${term}%`);
     }
 
     const from = (page - 1) * PAGE_SIZE;
@@ -108,7 +103,7 @@ export default function CategoryManagement() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: "", slug: "", description: "", image_url: "" });
+    setForm({ name: "", slug: "", image_url: "" });
     setDialogOpen(true);
   };
 
@@ -117,7 +112,6 @@ export default function CategoryManagement() {
     setForm({
       name: category.name,
       slug: category.slug,
-      description: category.description || "",
       image_url: category.image_url || "",
     });
     setDialogOpen(true);
@@ -171,7 +165,6 @@ export default function CategoryManagement() {
     const payload = {
       name,
       slug,
-      description: form.description.trim() || null,
       image_url: form.image_url || null,
     };
 
@@ -249,7 +242,7 @@ export default function CategoryManagement() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search by name, slug, or description..."
+          placeholder="Search by name or slug..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
@@ -262,7 +255,6 @@ export default function CategoryManagement() {
               <TableHead>Image</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Slug</TableHead>
-              <TableHead>Description</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -278,9 +270,6 @@ export default function CategoryManagement() {
                 </TableCell>
                 <TableCell className="font-medium">{category.name}</TableCell>
                 <TableCell className="font-mono text-xs">{category.slug}</TableCell>
-                <TableCell className="max-w-[360px] truncate text-muted-foreground">
-                  {category.description || "-"}
-                </TableCell>
                 <TableCell className="text-right space-x-1">
                   <Button variant="ghost" size="icon" onClick={() => openEdit(category)}>
                     <Pencil className="h-4 w-4" />
@@ -309,7 +298,7 @@ export default function CategoryManagement() {
             ))}
             {categories.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                   No categories found.
                 </TableCell>
               </TableRow>
@@ -346,14 +335,6 @@ export default function CategoryManagement() {
               <Input
                 value={form.slug}
                 onChange={(event) => setForm((prev) => ({ ...prev, slug: slugify(event.target.value) }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                value={form.description}
-                onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
               />
             </div>
 
