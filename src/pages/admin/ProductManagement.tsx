@@ -726,6 +726,7 @@ export default function ProductManagement() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Category</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -739,6 +740,9 @@ export default function ProductManagement() {
                     {p.images?.[0] && <img src={p.images[0]} alt="" className="w-10 h-10 object-cover rounded" />}
                     {p.name}
                   </div>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {categories.find(c => c.id === p.category_id)?.name ?? "—"}
                 </TableCell>
                 <TableCell>₹{Number(p.base_price).toLocaleString()}</TableCell>
                 <TableCell>

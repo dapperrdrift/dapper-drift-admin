@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Eye, Search } from "lucide-react";
+import { Eye, Search, Truck } from "lucide-react";
 import { AdminTablePagination } from "@/components/AdminTablePagination";
 import { Constants, type Database } from "@/integrations/supabase/types";
 
@@ -49,6 +49,7 @@ export default function OrderManagement() {
   const [trackingId, setTrackingId] = useState("");
   const [carrierName, setCarrierName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [pickupLoading, setPickupLoading] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -102,17 +103,37 @@ export default function OrderManagement() {
     fetchOrders();
   }, [fetchOrders]);
 
-  const updateStatus = async (orderId: string, newStatus: OrderStatus) => {
+  const updateStatus = async (
+    orderId: string,
+    newStatus: OrderStatus,
+    opts?: { trackingId?: string; carrierName?: string }
+  ) => {
     const payload: OrderUpdate = { status: newStatus, updated_at: new Date().toISOString() };
     if (newStatus === "shipped") {
-      payload.tracking_id = trackingId;
-      payload.carrier_name = carrierName;
+      if (opts?.trackingId) payload.tracking_id = opts.trackingId;
+      if (opts?.carrierName) payload.carrier_name = opts.carrierName;
     }
     const { error } = await supabase.from("orders").update(payload).eq("id", orderId);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
-    toast({ title: `Order status updated to ${newStatus}` });
+    toast({ title: `Status updated to ${formatStatus(newStatus)}` });
     fetchOrders();
     setSelectedOrder(null);
+  };
+
+  const requestPickup = async (orderId: string) => {
+    setPickupLoading(orderId);
+    try {
+      const { error } = await supabase.functions.invoke("schedule-shiprocket-pickup", {
+        body: { orderId },
+      });
+      if (error) throw error;
+      toast({ title: "Pickup requested", description: "Shiprocket will schedule a pickup. Status will update via webhook." });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: "Pickup request failed", description: message, variant: "destructive" });
+    } finally {
+      setPickupLoading(null);
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -203,14 +224,44 @@ export default function OrderManagement() {
                 <TableCell className="text-sm">{new Date(o.created_at).toLocaleDateString()}</TableCell>
                 <TableCell>₹{Number(o.total_amount).toLocaleString()}</TableCell>
                 <TableCell>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">
-                    {formatStatus(o.status)}
-                  </span>
+                  <Select
+                    value={o.status}
+                    onValueChange={(value) => {
+                      if (isOrderStatus(value) && value !== o.status) {
+                        updateStatus(o.id, value);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-7 w-[150px] text-xs px-2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUSES.map(s => (
+                        <SelectItem key={s} value={s} className="text-xs capitalize">
+                          {s.replace(/_/g, " ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="ghost" size="icon" onClick={() => setSelectedOrder(o)}>
-                    <Eye className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center justify-end gap-1">
+                    {o.status === "placed" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        disabled={pickupLoading === o.id}
+                        onClick={() => requestPickup(o.id)}
+                      >
+                        <Truck className="h-3 w-3" />
+                        {pickupLoading === o.id ? "Requesting…" : "Ready to Ship"}
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" onClick={() => setSelectedOrder(o)}>
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -250,7 +301,7 @@ export default function OrderManagement() {
                       const currentIdx = STATUSES.indexOf(selectedOrder.status);
                       if (i !== currentIdx + 1) return null;
                       return (
-                        <Button key={s} size="sm" onClick={() => updateStatus(selectedOrder.id, s)} className="capitalize">
+                        <Button key={s} size="sm" onClick={() => updateStatus(selectedOrder.id, s, { trackingId, carrierName })} className="capitalize">
                           Mark as {formatStatus(s)}
                         </Button>
                       );
