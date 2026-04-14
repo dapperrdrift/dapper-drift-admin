@@ -38,8 +38,20 @@ export function NotificationBell() {
       if (!unreadIds.length) return;
       const { error } = await supabase
         .from("notifications")
-        .update({ is_read: true })
+        .delete()
         .in("id", unreadIds);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+
+  const clearAll = useMutation({
+    mutationFn: async () => {
+      if (!notifications.length) return;
+      const { error } = await supabase
+        .from("notifications")
+        .delete()
+        .in("id", notifications.map((n) => n.id));
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
@@ -60,16 +72,28 @@ export function NotificationBell() {
       <PopoverContent className="w-80 p-0" align="end">
         <div className="flex items-center justify-between p-3 border-b">
           <span className="text-sm font-semibold">Notifications</span>
-          {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs h-auto py-1"
-              onClick={() => markAllRead.mutate()}
-            >
-              Mark all read
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-auto py-1"
+                onClick={() => markAllRead.mutate()}
+              >
+                Mark all read
+              </Button>
+            )}
+            {notifications.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-auto py-1 text-destructive hover:text-destructive"
+                onClick={() => clearAll.mutate()}
+              >
+                Clear all
+              </Button>
+            )}
+          </div>
         </div>
         <ScrollArea className="max-h-72">
           {notifications.length === 0 ? (
