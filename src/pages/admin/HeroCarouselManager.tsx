@@ -236,8 +236,8 @@ export default function HeroCarouselManager() {
                 onChange={handleFileUpload}
               />
             </div>
-            <div className="space-y-2"><Label>Overlay Text (optional)</Label><Input value={form.overlay_text} onChange={e => setForm({ ...form, overlay_text: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Link URL (optional)</Label><Input value={form.link_url} onChange={e => setForm({ ...form, link_url: e.target.value })} /></div>
+            {/* <div className="space-y-2"><Label>Overlay Text (optional)</Label><Input value={form.overlay_text} onChange={e => setForm({ ...form, overlay_text: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Link URL (optional)</Label><Input value={form.link_url} onChange={e => setForm({ ...form, link_url: e.target.value })} /></div> */}
             <Button className="w-full" onClick={handleSave} disabled={uploading}>{editing ? "Update" : "Add"}</Button>
           </div>
         </DialogContent>
