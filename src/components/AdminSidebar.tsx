@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Package, FolderTree, Warehouse, ShoppingCart, Ticket,
-  Image, MessageSquareQuote, Mail, LogOut,
+  Image, MessageSquareQuote, Mail, LogOut, Settings,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -22,6 +22,7 @@ const navItems = [
   { title: "Hero Carousel", url: "/admin/hero", icon: Image },
   { title: "Testimonials", url: "/admin/testimonials", icon: MessageSquareQuote },
   { title: "Newsletter", url: "/admin/newsletter", icon: Mail },
+  { title: "Settings", url: "/admin/settings", icon: Settings },
 ];
 
 export function AdminSidebar() {

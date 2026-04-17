@@ -19,6 +19,7 @@ const CouponManagement = lazy(() => import("./pages/admin/CouponManagement"));
 const HeroCarouselManager = lazy(() => import("./pages/admin/HeroCarouselManager"));
 const TestimonialsManager = lazy(() => import("./pages/admin/TestimonialsManager"));
 const NewsletterManager = lazy(() => import("./pages/admin/NewsletterManager"));
+const Settings = lazy(() => import("./pages/admin/Settings"));
 
 const queryClient = new QueryClient();
 
@@ -60,6 +61,7 @@ const App = () => (
               <Route path="hero" element={<Suspense fallback={<LazyFallback />}><HeroCarouselManager /></Suspense>} />
               <Route path="testimonials" element={<Suspense fallback={<LazyFallback />}><TestimonialsManager /></Suspense>} />
               <Route path="newsletter" element={<Suspense fallback={<LazyFallback />}><NewsletterManager /></Suspense>} />
+              <Route path="settings" element={<Suspense fallback={<LazyFallback />}><Settings /></Suspense>} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
