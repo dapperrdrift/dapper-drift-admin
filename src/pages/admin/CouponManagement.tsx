@@ -81,8 +81,13 @@ export default function CouponManagement() {
   };
 
   const handleSave = async () => {
+    if (!form.code.trim()) { toast({ title: "Coupon code is required", variant: "destructive" }); return; }
+    if (form.discount_value <= 0) { toast({ title: "Discount value must be greater than 0", variant: "destructive" }); return; }
+    if (form.discount_type === "percentage" && form.discount_value > 100) { toast({ title: "Percentage discount cannot exceed 100%", variant: "destructive" }); return; }
+    if (form.expiry_date && new Date(form.expiry_date) < new Date()) { toast({ title: "Expiry date must be in the future", variant: "destructive" }); return; }
+
     const payload = {
-      code: form.code.toUpperCase(),
+      code: form.code.trim().toUpperCase(),
       discount_type: form.discount_type,
       discount_value: form.discount_value,
       min_order_value: form.min_order_value,

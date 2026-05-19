@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Search, Upload, X, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Upload, X, Loader2, Copy, Minus } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { uploadOptimizedImage } from "@/lib/optimizedUpload";
 import { AdminTablePagination } from "@/components/AdminTablePagination";
@@ -641,9 +642,9 @@ export default function ProductManagement() {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("products").delete().eq("id", id);
+    const { error } = await supabase.from("products").update({ is_active: false }).eq("id", id);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
-    toast({ title: "Product deleted" });
+    toast({ title: "Product deactivated" });
     fetchProducts();
   };
 
@@ -916,31 +917,51 @@ export default function ProductManagement() {
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-medium">Variant {index + 1}</p>
                           <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => addSequentialVariantAfter(variant.temp_id)}
-                            >
-                              Add Next
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => duplicateVariant(variant.temp_id)}
-                            >
-                              Duplicate
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeVariant(variant.temp_id)}
-                              disabled={variants.length === 1}
-                            >
-                              Remove
-                            </Button>
+                            <TooltipProvider delayDuration={300}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => addSequentialVariantAfter(variant.temp_id)}
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">Add variant below</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => duplicateVariant(variant.temp_id)}
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">Duplicate variant</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => removeVariant(variant.temp_id)}
+                                    disabled={variants.length === 1}
+                                  >
+                                    <Minus className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">Remove variant</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           </div>
                         </div>
 

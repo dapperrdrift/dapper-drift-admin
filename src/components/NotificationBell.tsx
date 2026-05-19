@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Bell } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -15,18 +16,22 @@ import { formatDistanceToNow } from "date-fns";
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const { data: notifications = [] } = useQuery({
-    queryKey: ["notifications"],
+    queryKey: ["notifications", user?.id],
     queryFn: async () => {
+      if (!user?.id) return [];
       const { data, error } = await supabase
         .from("notifications")
         .select("*")
+        .eq("recipient_id", user.id)
         .order("created_at", { ascending: false })
         .limit(20);
       if (error) throw error;
       return data;
     },
+    enabled: !!user?.id,
     refetchInterval: 30000,
   });
 
@@ -38,7 +43,7 @@ export function NotificationBell() {
       if (!unreadIds.length) return;
       const { error } = await supabase
         .from("notifications")
-        .delete()
+        .update({ is_read: true })
         .in("id", unreadIds);
       if (error) throw error;
     },

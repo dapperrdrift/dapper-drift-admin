@@ -25,6 +25,20 @@ function isOrderStatus(value: string): value is OrderStatus {
   return STATUSES.some((status) => status === value);
 }
 
+// Returns only the statuses an order can transition to from the current one.
+// Transitions are sequential (currentIdx → currentIdx+1) plus cancellation,
+// except already-terminal statuses (delivered, cancelled) have no transitions.
+function getAllowedNextStatuses(current: OrderStatus): OrderStatus[] {
+  const idx = STATUSES.indexOf(current);
+  if (idx === -1 || current === "delivered" || current === "cancelled") return [];
+  const next: OrderStatus[] = [];
+  if (idx + 1 < STATUSES.length && STATUSES[idx + 1] !== "cancelled") {
+    next.push(STATUSES[idx + 1]);
+  }
+  if (current !== "cancelled") next.push("cancelled");
+  return next;
+}
+
 function isFilterStatus(value: string): value is FilterStatus {
   return value === "all" || isOrderStatus(value);
 }
@@ -224,25 +238,40 @@ export default function OrderManagement() {
                 <TableCell className="text-sm">{new Date(o.created_at).toLocaleDateString()}</TableCell>
                 <TableCell>₹{Number(o.total_amount).toLocaleString()}</TableCell>
                 <TableCell>
-                  <Select
-                    value={o.status}
-                    onValueChange={(value) => {
-                      if (isOrderStatus(value) && value !== o.status) {
-                        updateStatus(o.id, value);
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-7 w-[150px] text-xs px-2">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {STATUSES.map(s => (
-                        <SelectItem key={s} value={s} className="text-xs capitalize">
-                          {s.replace(/_/g, " ")}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {(() => {
+                    const allowed = getAllowedNextStatuses(o.status);
+                    if (allowed.length === 0) {
+                      return (
+                        <span className="text-xs capitalize text-muted-foreground">
+                          {o.status.replace(/_/g, " ")}
+                        </span>
+                      );
+                    }
+                    return (
+                      <Select
+                        value={o.status}
+                        onValueChange={(value) => {
+                          if (isOrderStatus(value) && value !== o.status) {
+                            updateStatus(o.id, value);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-7 w-[150px] text-xs px-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={o.status} className="text-xs capitalize" disabled>
+                            {o.status.replace(/_/g, " ")}
+                          </SelectItem>
+                          {allowed.map(s => (
+                            <SelectItem key={s} value={s} className="text-xs capitalize">
+                              {s.replace(/_/g, " ")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
@@ -279,6 +308,17 @@ export default function OrderManagement() {
           <DialogHeader><DialogTitle>Order Details</DialogTitle></DialogHeader>
           {selectedOrder && (
             <div className="space-y-4">
+              {(() => {
+                const addr = selectedOrder.shipping_address as { firstName?: string; lastName?: string; email?: string; phone?: string } | null;
+                if (!addr) return null;
+                return (
+                  <div className="rounded-md bg-muted/50 px-3 py-2 text-sm space-y-0.5">
+                    <p className="font-medium">{addr.firstName} {addr.lastName}</p>
+                    {addr.email && <p className="text-muted-foreground">{addr.email}</p>}
+                    {addr.phone && <p className="text-muted-foreground">{addr.phone}</p>}
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-muted-foreground">ID:</span> {selectedOrder.id.slice(0, 8)}</div>
                 <div><span className="text-muted-foreground">Amount:</span> ₹{Number(selectedOrder.total_amount).toLocaleString()}</div>
@@ -290,7 +330,8 @@ export default function OrderManagement() {
               {selectedOrder.status !== "delivered" && selectedOrder.status !== "cancelled" && (
                 <div className="space-y-3 pt-2 border-t">
                   <Label>Update Status</Label>
-                  {selectedOrder.status === "processing" || selectedOrder.status === "confirmed" ? (
+                  {STATUSES.indexOf(selectedOrder.status) + 1 < STATUSES.indexOf("shipped") + 1 &&
+                   STATUSES[STATUSES.indexOf(selectedOrder.status) + 1] === "shipped" ? (
                     <div className="space-y-2">
                       <Input placeholder="Tracking ID" value={trackingId} onChange={e => setTrackingId(e.target.value)} />
                       <Input placeholder="Carrier Name" value={carrierName} onChange={e => setCarrierName(e.target.value)} />

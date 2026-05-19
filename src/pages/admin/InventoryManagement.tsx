@@ -125,14 +125,16 @@ export default function InventoryManagement() {
     if (isNaN(adj) || adj === 0) return;
     const newQty = v.stock_quantity + adj;
     if (newQty < 0) { toast({ title: "Cannot go below 0", variant: "destructive" }); return; }
-    await supabase.from("variants").update({ stock_quantity: newQty }).eq("id", v.id);
-    await supabase.from("stock_audit_log").insert({
+    const { error: updateError } = await supabase.from("variants").update({ stock_quantity: newQty }).eq("id", v.id);
+    if (updateError) { toast({ title: "Error updating stock", description: updateError.message, variant: "destructive" }); return; }
+    const { error: auditError } = await supabase.from("stock_audit_log").insert({
       variant_id: v.id,
       admin_id: user?.id,
       prev_qty: v.stock_quantity,
       new_qty: newQty,
       reason: adj > 0 ? "Manual increase" : "Manual decrease",
     });
+    if (auditError) console.error("Stock audit log failed:", auditError.message);
     setAdjustments(prev => ({ ...prev, [v.id]: "" }));
     toast({ title: `Stock updated to ${newQty}` });
     fetchVariants();

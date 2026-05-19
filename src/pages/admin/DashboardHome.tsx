@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ShoppingCart, Package, DollarSign, AlertTriangle } from "lucide-react";
+import { ShoppingCart, Package, IndianRupee, AlertTriangle } from "lucide-react";
 
 interface Stats {
   totalOrders: number;
@@ -11,9 +11,16 @@ interface Stats {
   lowStockCount: number;
 }
 
+interface RecentOrder {
+  id: string;
+  created_at: string;
+  total_amount: number;
+  status: string;
+}
+
 export default function DashboardHome() {
   const [stats, setStats] = useState<Stats>({ totalOrders: 0, totalRevenue: 0, totalProducts: 0, lowStockCount: 0 });
-  const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -71,7 +78,7 @@ export default function DashboardHome() {
 
   const cards = [
     { title: "Total Orders", value: stats.totalOrders, icon: ShoppingCart, color: "text-chart-4" },
-    { title: "Revenue (Delivered)", value: `₹${stats.totalRevenue.toLocaleString()}`, icon: DollarSign, color: "text-chart-3" },
+    { title: "Revenue (Delivered)", value: `₹${stats.totalRevenue.toLocaleString()}`, icon: IndianRupee, color: "text-chart-3" },
     { title: "Active Products", value: stats.totalProducts, icon: Package, color: "text-chart-1" },
     { title: "Low Stock Alerts", value: stats.lowStockCount, icon: AlertTriangle, color: "text-chart-2" },
   ];
