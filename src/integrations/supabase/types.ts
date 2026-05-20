@@ -286,6 +286,7 @@ export type Database = {
       products: {
         Row: {
           base_price: number
+          brand: string | null
           category_id: string | null
           created_at: string
           description: string | null
@@ -293,10 +294,13 @@ export type Database = {
           images: string[] | null
           is_active: boolean
           name: string
+          status: string | null
+          tags: string[] | null
           updated_at: string
         }
         Insert: {
           base_price?: number
+          brand?: string | null
           category_id?: string | null
           created_at?: string
           description?: string | null
@@ -304,10 +308,13 @@ export type Database = {
           images?: string[] | null
           is_active?: boolean
           name: string
+          status?: string | null
+          tags?: string[] | null
           updated_at?: string
         }
         Update: {
           base_price?: number
+          brand?: string | null
           category_id?: string | null
           created_at?: string
           description?: string | null
@@ -315,6 +322,8 @@ export type Database = {
           images?: string[] | null
           is_active?: boolean
           name?: string
+          status?: string | null
+          tags?: string[] | null
           updated_at?: string
         }
         Relationships: [
@@ -412,7 +421,9 @@ export type Database = {
       }
       variants: {
         Row: {
+          barcode: string | null
           color: string
+          compare_at_price: number | null
           created_at: string
           id: string
           images: string[]
@@ -422,9 +433,13 @@ export type Database = {
           size: string
           sku: string
           stock_quantity: number
+          track_inventory: boolean | null
+          weight: number | null
         }
         Insert: {
+          barcode?: string | null
           color: string
+          compare_at_price?: number | null
           created_at?: string
           id?: string
           images?: string[]
@@ -434,9 +449,13 @@ export type Database = {
           size: string
           sku: string
           stock_quantity?: number
+          track_inventory?: boolean | null
+          weight?: number | null
         }
         Update: {
+          barcode?: string | null
           color?: string
+          compare_at_price?: number | null
           created_at?: string
           id?: string
           images?: string[]
@@ -446,6 +465,8 @@ export type Database = {
           size?: string
           sku?: string
           stock_quantity?: number
+          track_inventory?: boolean | null
+          weight?: number | null
         }
         Relationships: [
           {

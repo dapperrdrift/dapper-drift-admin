@@ -12,6 +12,7 @@ import NotFound from "./pages/NotFound";
 
 const DashboardHome = lazy(() => import("./pages/admin/DashboardHome"));
 const ProductManagement = lazy(() => import("./pages/admin/ProductManagement"));
+const AddEditProduct = lazy(() => import("./pages/admin/AddEditProduct"));
 const CategoryManagement = lazy(() => import("./pages/admin/CategoryManagement"));
 const InventoryManagement = lazy(() => import("./pages/admin/InventoryManagement"));
 const OrderManagement = lazy(() => import("./pages/admin/OrderManagement"));
@@ -54,6 +55,8 @@ const App = () => (
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<Suspense fallback={<LazyFallback />}><DashboardHome /></Suspense>} />
               <Route path="products" element={<Suspense fallback={<LazyFallback />}><ProductManagement /></Suspense>} />
+              <Route path="products/new" element={<Suspense fallback={<LazyFallback />}><AddEditProduct /></Suspense>} />
+              <Route path="products/:id" element={<Suspense fallback={<LazyFallback />}><AddEditProduct /></Suspense>} />
               <Route path="categories" element={<Suspense fallback={<LazyFallback />}><CategoryManagement /></Suspense>} />
               <Route path="inventory" element={<Suspense fallback={<LazyFallback />}><InventoryManagement /></Suspense>} />
               <Route path="orders" element={<Suspense fallback={<LazyFallback />}><OrderManagement /></Suspense>} />
