@@ -61,7 +61,7 @@ export default function Settings() {
           <CardHeader>
             <CardTitle>Reset Password</CardTitle>
             <CardDescription>
-              Update your account password. Ensure it is at least 6 characters long.
+              Update your account password. Ensure it is at least 8 characters long.
             </CardDescription>
           </CardHeader>
           <CardContent>

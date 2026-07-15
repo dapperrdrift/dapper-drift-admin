@@ -116,6 +116,8 @@ export default function AddEditProduct() {
     { name: "Size", values: [], inputValue: "" },
   ]);
   const [variants, setVariants] = useState<VariantRow[]>([]);
+  const [simpleStock, setSimpleStock] = useState(0);
+  const [simpleLowStockThreshold, setSimpleLowStockThreshold] = useState(5);
   const [variantsGenerated, setVariantsGenerated] = useState(false);
   const variantFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -155,7 +157,14 @@ export default function AddEditProduct() {
         base_price: product.base_price,
         images: product.images || [],
       });
-      if (variantData && variantData.length > 0) {
+      const isSimpleProduct = variantData && variantData.length === 1
+        && variantData[0].color === "Default" && variantData[0].size === "Default";
+
+      if (isSimpleProduct) {
+        setHasVariants(false);
+        setSimpleStock(variantData[0].stock_quantity);
+        setSimpleLowStockThreshold(variantData[0].low_stock_threshold);
+      } else if (variantData && variantData.length > 0) {
         const uniqueColors = [...new Set(variantData.map(v => v.color).filter(c => c && c !== "Default"))];
         const uniqueSizes = [...new Set(variantData.map(v => v.size).filter(s => s && s !== "Default"))];
         setHasVariants(true);
@@ -352,6 +361,8 @@ export default function AddEditProduct() {
         ...createEmptyVariant("Default", "Default", "Default"),
         sku: normalizeSkuPart(form.name).slice(0, 12) + "-DEFAULT",
         price_override: form.base_price,
+        stock_quantity: simpleStock,
+        low_stock_threshold: simpleLowStockThreshold,
       }];
 
       if (isEdit) {
@@ -894,11 +905,15 @@ export default function AddEditProduct() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <Label className="text-xs font-medium">Stock quantity</Label>
-                        <Input type="number" placeholder="0" className="h-9 text-sm" />
+                        <Input type="number" placeholder="0" className="h-9 text-sm"
+                          value={simpleStock}
+                          onChange={e => setSimpleStock(Number(e.target.value) || 0)} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-medium">Low stock alert</Label>
-                        <Input type="number" placeholder="5" className="h-9 text-sm" />
+                        <Input type="number" placeholder="5" className="h-9 text-sm"
+                          value={simpleLowStockThreshold}
+                          onChange={e => setSimpleLowStockThreshold(Number(e.target.value) || 0)} />
                       </div>
                     </div>
                   </div>
