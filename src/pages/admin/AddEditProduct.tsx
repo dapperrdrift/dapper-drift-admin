@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -70,6 +70,8 @@ const COLOR_SWATCHES: Record<string, string> = {
 function getColorSwatch(color: string): string | null {
   return COLOR_SWATCHES[color] ?? null;
 }
+
+const SIZE_PRESETS = ["XS", "S", "M", "L", "XL", "XXL", "Free Size", "28", "30", "32", "34", "36"];
 
 function normalizeSkuPart(value: string): string {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "X";
@@ -255,6 +257,11 @@ export default function AddEditProduct() {
     setOptions(prev => prev.map((opt, i) => i === optIdx
       ? { ...opt, values: opt.values.filter(v => v !== val) } : opt));
 
+  const toggleOptionValue = (optIdx: number, val: string) =>
+    setOptions(prev => prev.map((opt, i) => i === optIdx
+      ? { ...opt, values: opt.values.includes(val) ? opt.values.filter(v => v !== val) : [...opt.values, val] }
+      : opt));
+
   const generateVariants = () => {
     const colors = options[0]?.values || [];
     const sizes = options[1]?.values || [];
@@ -365,30 +372,23 @@ export default function AddEditProduct() {
         low_stock_threshold: simpleLowStockThreshold,
       }];
 
-      if (isEdit) {
-        const existingIds = finalVariants.filter(v => v.id).map(v => v.id as string);
-        let deleteQ = supabase.from("variants").delete().eq("product_id", id!);
-        if (existingIds.length > 0) deleteQ = deleteQ.not("id", "in", `(${existingIds.join(",")})`);
-        await deleteQ;
-      }
-
-      for (const v of finalVariants) {
-        const vPayload = {
-          product_id: pid!,
-          color: v.color, size: v.size,
-          sku: v.sku.trim(),
-          price_override: v.price_override,
-          compare_at_price: v.compare_at_price,
-          stock_quantity: v.stock_quantity,
-          low_stock_threshold: v.low_stock_threshold,
-          barcode: v.barcode || null,
-          weight: v.weight ? Number(v.weight) : null,
-          track_inventory: v.track_inventory,
-          images: v.images,
-        };
-        if (v.id) await supabase.from("variants").update(vPayload).eq("id", v.id);
-        else await supabase.from("variants").insert(vPayload);
-      }
+      const variantsPayload = finalVariants.map(v => ({
+        id: v.id ?? null,
+        color: v.color, size: v.size,
+        sku: v.sku.trim(),
+        price_override: v.price_override,
+        compare_at_price: v.compare_at_price,
+        stock_quantity: v.stock_quantity,
+        low_stock_threshold: v.low_stock_threshold,
+        barcode: v.barcode || null,
+        weight: v.weight ? Number(v.weight) : null,
+        track_inventory: v.track_inventory,
+      }));
+      const { error: variantError } = await supabase.rpc("replace_product_variants", {
+        p_product_id: pid!,
+        p_variants: variantsPayload,
+      });
+      if (variantError) throw variantError;
 
       toast({ title: saveStatus === "active" ? "Product published!" : "Draft saved" });
       navigate("/admin/products");
@@ -429,7 +429,7 @@ export default function AddEditProduct() {
     <div className="-m-6 flex flex-col bg-muted/20" style={{ minHeight: "calc(100vh - 3.5rem)" }}>
 
       {/* ── Sticky page header ── */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b">
+      <div className="z-20 bg-background/95 backdrop-blur-sm border-b">
         <div className="px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <Button variant="ghost" size="icon" onClick={() => navigate("/admin/products")} className="h-8 w-8 shrink-0 rounded-lg">
@@ -443,16 +443,6 @@ export default function AddEditProduct() {
               </div>
               <h1 className="text-base font-semibold leading-tight">{isEdit ? "Edit product" : "Add product"}</h1>
             </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button variant="outline" size="sm" onClick={() => handleSave("draft")} disabled={saving}>
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
-              Save draft
-            </Button>
-            <Button size="sm" onClick={() => handleSave("active")} disabled={saving} className="min-w-[90px]">
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-              Publish
-            </Button>
           </div>
         </div>
       </div>
@@ -482,13 +472,10 @@ export default function AddEditProduct() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="description" className="text-xs font-medium">Description</Label>
-                  <Textarea
-                    id="description"
+                  <RichTextEditor
                     value={form.description}
-                    onChange={e => updateForm("description", e.target.value)}
+                    onChange={markdown => updateForm("description", markdown)}
                     placeholder="Describe your product — materials, fit, features..."
-                    rows={5}
-                    className="resize-none text-sm leading-relaxed"
                   />
                 </div>
 
@@ -623,47 +610,84 @@ export default function AddEditProduct() {
                     {/* Option builder */}
                     <div className="p-6 space-y-4">
                       <div className="space-y-3">
-                        {options.map((opt, optIdx) => (
-                          <div key={optIdx} className="flex items-start gap-2">
-                            <Input
-                              value={opt.name}
-                              onChange={e => updateOptionValue(optIdx, "name", e.target.value)}
-                              placeholder="Option name"
-                              className="w-[110px] h-8 text-xs shrink-0 font-medium"
-                            />
-                            <div
-                              className="flex flex-1 flex-wrap gap-1.5 min-h-[32px] px-2.5 py-1.5 rounded-lg border bg-muted/30 hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring focus-within:bg-background transition-all cursor-text"
-                              onClick={() => document.getElementById(`opt-${optIdx}`)?.focus()}
-                            >
-                              {opt.values.map(val => {
-                                const swatch = getColorSwatch(val);
-                                return (
-                                  <span key={val} className="inline-flex items-center gap-1 bg-background border text-xs font-medium px-2 py-0.5 rounded-md shadow-sm">
-                                    {swatch && optIdx === 0 && (
-                                      <span className="w-3 h-3 rounded-full border border-black/10 shrink-0" style={{ background: swatch }} />
-                                    )}
-                                    {val}
-                                    <button type="button" onClick={() => removeOptionValue(optIdx, val)}
-                                      className="ml-0.5 text-muted-foreground hover:text-destructive transition-colors">
-                                      <X className="h-2.5 w-2.5" />
-                                    </button>
-                                  </span>
-                                );
-                              })}
-                              <input
-                                id={`opt-${optIdx}`}
-                                value={opt.inputValue}
-                                onChange={e => updateOptionValue(optIdx, "inputValue", e.target.value)}
-                                onKeyDown={e => {
-                                  if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addOptionValue(optIdx); }
-                                }}
-                                onBlur={() => opt.inputValue.trim() && addOptionValue(optIdx)}
-                                placeholder={opt.values.length === 0 ? `Add ${opt.name.toLowerCase()} values...` : ""}
-                                className="flex-1 min-w-[120px] bg-transparent outline-none text-xs placeholder:text-muted-foreground"
+                        {options.map((opt, optIdx) => {
+                          const isSize = opt.name.trim().toLowerCase() === "size";
+
+                          if (isSize) {
+                            return (
+                              <div key={optIdx} className="flex items-start gap-2">
+                                <Input
+                                  value={opt.name}
+                                  onChange={e => updateOptionValue(optIdx, "name", e.target.value)}
+                                  placeholder="Option name"
+                                  className="w-[110px] h-8 text-xs shrink-0 font-medium"
+                                />
+                                <div className="flex flex-1 flex-wrap gap-1.5">
+                                  {SIZE_PRESETS.map(size => {
+                                    const selected = opt.values.includes(size);
+                                    return (
+                                      <button
+                                        key={size}
+                                        type="button"
+                                        onClick={() => toggleOptionValue(optIdx, size)}
+                                        className={cn(
+                                          "h-8 min-w-[42px] px-3 rounded-lg border text-xs font-medium transition-all",
+                                          selected
+                                            ? "border-foreground bg-foreground text-background"
+                                            : "border-input bg-muted/30 hover:bg-muted/50"
+                                        )}
+                                      >
+                                        {size}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div key={optIdx} className="flex items-start gap-2">
+                              <Input
+                                value={opt.name}
+                                onChange={e => updateOptionValue(optIdx, "name", e.target.value)}
+                                placeholder="Option name"
+                                className="w-[110px] h-8 text-xs shrink-0 font-medium"
                               />
+                              <div
+                                className="flex flex-1 flex-wrap gap-1.5 min-h-[32px] px-2.5 py-1.5 rounded-lg border bg-muted/30 hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring focus-within:bg-background transition-all cursor-text"
+                                onClick={() => document.getElementById(`opt-${optIdx}`)?.focus()}
+                              >
+                                {opt.values.map(val => {
+                                  const swatch = getColorSwatch(val);
+                                  return (
+                                    <span key={val} className="inline-flex items-center gap-1 bg-background border text-xs font-medium px-2 py-0.5 rounded-md shadow-sm">
+                                      {swatch && optIdx === 0 && (
+                                        <span className="w-3 h-3 rounded-full border border-black/10 shrink-0" style={{ background: swatch }} />
+                                      )}
+                                      {val}
+                                      <button type="button" onClick={() => removeOptionValue(optIdx, val)}
+                                        className="ml-0.5 text-muted-foreground hover:text-destructive transition-colors">
+                                        <X className="h-2.5 w-2.5" />
+                                      </button>
+                                    </span>
+                                  );
+                                })}
+                                <input
+                                  id={`opt-${optIdx}`}
+                                  value={opt.inputValue}
+                                  onChange={e => updateOptionValue(optIdx, "inputValue", e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addOptionValue(optIdx); }
+                                  }}
+                                  onBlur={() => opt.inputValue.trim() && addOptionValue(optIdx)}
+                                  placeholder={opt.values.length === 0 ? `Add ${opt.name.toLowerCase()} values...` : ""}
+                                  className="flex-1 min-w-[120px] bg-transparent outline-none text-xs placeholder:text-muted-foreground"
+                                />
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       <div className="flex items-center gap-2 flex-wrap">
@@ -708,10 +732,10 @@ export default function AddEditProduct() {
                           <span />
                           <span>Variant</span>
                           <span>SKU</span>
-                          <span>Price</span>
-                          <span>Sale price</span>
-                          <span>Qty</span>
-                          <span>Status</span>
+                          <span className="text-right">Price</span>
+                          <span className="text-right">Sale price</span>
+                          <span className="text-right">Qty</span>
+                          <span className="text-center">Status</span>
                           <span />
                         </div>
 
@@ -737,11 +761,11 @@ export default function AddEditProduct() {
                               <span className="text-xs text-muted-foreground font-mono truncate">
                                 {v.sku || <span className="italic opacity-40">—</span>}
                               </span>
-                              <span className="text-sm tabular-nums">{v.price_override != null ? `₹${v.price_override}` : <span className="text-muted-foreground/50">—</span>}</span>
-                              <span className="text-sm text-muted-foreground tabular-nums">{v.compare_at_price != null ? `₹${v.compare_at_price}` : <span className="opacity-40">—</span>}</span>
-                              <span className="text-sm tabular-nums">{v.stock_quantity}</span>
+                              <span className="text-sm tabular-nums text-right">{v.price_override != null ? `₹${v.price_override}` : <span className="text-muted-foreground/50">—</span>}</span>
+                              <span className="text-sm text-muted-foreground tabular-nums text-right">{v.compare_at_price != null ? `₹${v.compare_at_price}` : <span className="opacity-40">—</span>}</span>
+                              <span className="text-sm tabular-nums text-right">{v.stock_quantity}</span>
                               <span className={cn(
-                                "text-[11px] px-2 py-0.5 rounded-full font-medium inline-flex items-center w-fit gap-1",
+                                "text-[11px] px-2 py-0.5 rounded-full font-medium inline-flex items-center justify-center w-fit mx-auto gap-1",
                                 v.status === "active"
                                   ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                                   : "bg-muted text-muted-foreground"
@@ -1054,8 +1078,8 @@ export default function AddEditProduct() {
       </div>
 
       {/* ── Sticky footer ── */}
-      <div className="sticky bottom-0 z-20 border-t bg-card/95 backdrop-blur-sm shadow-[0_-1px_0_0_hsl(var(--border))]">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+      <div className="sticky -bottom-6 z-20 -mb-6 border-t bg-card/95 backdrop-blur-sm shadow-[0_-1px_0_0_hsl(var(--border))]">
+        <div className="max-w-6xl mx-auto px-6 py-3 pb-[calc(0.75rem+1.5rem)] flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             {variantsGenerated && variants.length > 0 ? (
               <span className="flex items-center gap-1.5">

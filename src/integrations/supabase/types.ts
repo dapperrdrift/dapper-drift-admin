@@ -496,6 +496,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      replace_product_variants: {
+        Args: {
+          p_product_id: string
+          p_variants: Json
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"

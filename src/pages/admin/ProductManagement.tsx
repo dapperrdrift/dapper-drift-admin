@@ -116,7 +116,7 @@ export default function ProductManagement() {
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
   const handleDelete = async (id: string, name: string) => {
-    const { error } = await supabase.from("products").update({ is_active: false }).eq("id", id);
+    const { error } = await supabase.from("products").update({ is_active: false, status: "archived" }).eq("id", id);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
     toast({ title: `"${name}" archived` });
     fetchProducts();
