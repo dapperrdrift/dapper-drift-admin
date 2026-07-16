@@ -209,6 +209,8 @@ export type Database = {
           created_at: string
           discount_amount: number
           id: string
+          invoice_sent_at: string | null
+          order_number: string | null
           shipping_address: Json | null
           shipping_fee: number
           status: Database["public"]["Enums"]["order_status"]
@@ -222,6 +224,8 @@ export type Database = {
           created_at?: string
           discount_amount?: number
           id?: string
+          invoice_sent_at?: string | null
+          order_number?: string | null
           shipping_address?: Json | null
           shipping_fee?: number
           status?: Database["public"]["Enums"]["order_status"]
@@ -235,6 +239,8 @@ export type Database = {
           created_at?: string
           discount_amount?: number
           id?: string
+          invoice_sent_at?: string | null
+          order_number?: string | null
           shipping_address?: Json | null
           shipping_fee?: number
           status?: Database["public"]["Enums"]["order_status"]

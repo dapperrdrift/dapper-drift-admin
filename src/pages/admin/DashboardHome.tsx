@@ -13,9 +13,12 @@ interface Stats {
 
 interface RecentOrder {
   id: string;
+  order_number: string | null;
   created_at: string;
   total_amount: number;
   status: string;
+  shipping_address: { firstName?: string; lastName?: string } | null;
+  order_items: { count: number }[];
 }
 
 export default function DashboardHome() {
@@ -30,7 +33,7 @@ export default function DashboardHome() {
         supabase.from("products").select("id", { count: "exact", head: true }).eq("is_active", true),
         supabase.from("variants").select("id, stock_quantity, low_stock_threshold"),
         supabase.from("orders").select("total_amount").eq("status", "delivered"),
-        supabase.from("orders").select("*").order("created_at", { ascending: false }).limit(5),
+        supabase.from("orders").select("*, order_items(count)").order("created_at", { ascending: false }).limit(5),
       ]);
 
       const lowStock = (variantsRes.data || []).filter(v => v.stock_quantity <= v.low_stock_threshold);
@@ -106,18 +109,24 @@ export default function DashboardHome() {
             <p className="text-muted-foreground text-sm">No orders yet.</p>
           ) : (
             <div className="space-y-2">
-              {recentOrders.map(o => (
-                <div key={o.id} className="flex items-center justify-between border-b pb-2 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium">{o.id.slice(0, 8)}...</p>
-                    <p className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleDateString()}</p>
+              {recentOrders.map(o => {
+                const customerName = [o.shipping_address?.firstName, o.shipping_address?.lastName].filter(Boolean).join(" ");
+                const itemCount = o.order_items?.[0]?.count ?? 0;
+                return (
+                  <div key={o.id} className="flex items-center justify-between border-b pb-2 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium">#{o.order_number || o.id.slice(0, 8)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {customerName || "Guest"} · {itemCount} item{itemCount !== 1 ? "s" : ""} · {new Date(o.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium">₹{Number(o.total_amount).toLocaleString()}</p>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">{o.status}</span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">₹{Number(o.total_amount).toLocaleString()}</p>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">{o.status}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

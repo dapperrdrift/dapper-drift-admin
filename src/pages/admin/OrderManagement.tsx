@@ -64,6 +64,8 @@ export default function OrderManagement() {
   const [carrierName, setCarrierName] = useState("");
   const [loading, setLoading] = useState(true);
   const [pickupLoading, setPickupLoading] = useState<string | null>(null);
+  const [invoiceSending, setInvoiceSending] = useState<string | null>(null);
+  const [invoiceDownloading, setInvoiceDownloading] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -130,8 +132,54 @@ export default function OrderManagement() {
     const { error } = await supabase.from("orders").update(payload).eq("id", orderId);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
     toast({ title: `Status updated to ${formatStatus(newStatus)}` });
+    if (newStatus === "delivered") {
+      // Fire-and-forget: don't block the status update on email delivery.
+      supabase.functions.invoke("send-invoice-email", { body: { orderId } }).then(({ error: invoiceError }) => {
+        if (invoiceError) {
+          toast({ title: "Invoice email failed to send", description: invoiceError.message, variant: "destructive" });
+        } else {
+          toast({ title: "Invoice emailed to customer" });
+        }
+        fetchOrders();
+      });
+    }
     fetchOrders();
     setSelectedOrder(null);
+  };
+
+  const sendInvoice = async (orderId: string) => {
+    setInvoiceSending(orderId);
+    try {
+      const { error } = await supabase.functions.invoke("send-invoice-email", { body: { orderId } });
+      if (error) throw error;
+      toast({ title: "Invoice emailed to customer" });
+      fetchOrders();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: "Failed to send invoice", description: message, variant: "destructive" });
+    } finally {
+      setInvoiceSending(null);
+    }
+  };
+
+  const downloadInvoice = async (orderId: string) => {
+    setInvoiceDownloading(orderId);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-invoice", { body: { orderId } });
+      if (error) throw error;
+      const path = data?.path as string | undefined;
+      if (!path) throw new Error("Invoice generation did not return a file path");
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from("invoices")
+        .createSignedUrl(path, 60);
+      if (signedError || !signedData?.signedUrl) throw signedError || new Error("Failed to create download link");
+      window.open(signedData.signedUrl, "_blank");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: "Failed to download invoice", description: message, variant: "destructive" });
+    } finally {
+      setInvoiceDownloading(null);
+    }
   };
 
   const requestPickup = async (orderId: string) => {
@@ -234,7 +282,7 @@ export default function OrderManagement() {
           <TableBody>
             {orders.map(o => (
               <TableRow key={o.id}>
-                <TableCell className="font-mono text-xs">{o.id.slice(0, 8)}</TableCell>
+                <TableCell className="font-mono text-xs">{o.order_number || o.id.slice(0, 8)}</TableCell>
                 <TableCell className="text-sm">{new Date(o.created_at).toLocaleDateString()}</TableCell>
                 <TableCell>₹{Number(o.total_amount).toLocaleString()}</TableCell>
                 <TableCell>
@@ -320,12 +368,40 @@ export default function OrderManagement() {
                 );
               })()}
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-muted-foreground">ID:</span> {selectedOrder.id.slice(0, 8)}</div>
+                <div><span className="text-muted-foreground">Order:</span> {selectedOrder.order_number || selectedOrder.id.slice(0, 8)}</div>
                 <div><span className="text-muted-foreground">Amount:</span> ₹{Number(selectedOrder.total_amount).toLocaleString()}</div>
                 <div><span className="text-muted-foreground">Discount:</span> ₹{Number(selectedOrder.discount_amount).toLocaleString()}</div>
                 <div><span className="text-muted-foreground">Shipping:</span> ₹{Number(selectedOrder.shipping_fee).toLocaleString()}</div>
                 <div className="col-span-2"><span className="text-muted-foreground">Status:</span> <span className="capitalize">{formatStatus(selectedOrder.status)}</span></div>
                 {selectedOrder.tracking_id && <div className="col-span-2"><span className="text-muted-foreground">Tracking:</span> {selectedOrder.tracking_id} ({selectedOrder.carrier_name})</div>}
+              </div>
+              <div className="space-y-2 pt-2 border-t">
+                <div className="flex items-center justify-between">
+                  <Label>Invoice</Label>
+                  {selectedOrder.invoice_sent_at && (
+                    <span className="text-xs text-muted-foreground">
+                      Sent {new Date(selectedOrder.invoice_sent_at).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={invoiceSending === selectedOrder.id}
+                    onClick={() => sendInvoice(selectedOrder.id)}
+                  >
+                    {invoiceSending === selectedOrder.id ? "Sending…" : "Send Invoice"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={invoiceDownloading === selectedOrder.id}
+                    onClick={() => downloadInvoice(selectedOrder.id)}
+                  >
+                    {invoiceDownloading === selectedOrder.id ? "Preparing…" : "Download Invoice"}
+                  </Button>
+                </div>
               </div>
               {selectedOrder.status !== "delivered" && selectedOrder.status !== "cancelled" && (
                 <div className="space-y-3 pt-2 border-t">
