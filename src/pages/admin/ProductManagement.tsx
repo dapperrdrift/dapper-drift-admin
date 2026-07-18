@@ -3,12 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { AdminTablePagination } from "@/components/AdminTablePagination";
-import { Plus, Search, Pencil, Trash2, Package, Tag } from "lucide-react";
+import { Plus, Search, Pencil, Archive, Trash2, Package, Tag, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Product {
@@ -62,6 +63,8 @@ export default function ProductManagement() {
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkActing, setBulkActing] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 300);
@@ -85,6 +88,7 @@ export default function ProductManagement() {
     else if (sortBy === "price_desc") query = query.order("base_price", { ascending: false });
     else if (sortBy === "name") query = query.order("name", { ascending: true });
     else query = query.order("created_at", { ascending: false });
+    query = query.order("id", { ascending: true });
 
     const from = (page - 1) * PAGE_SIZE;
     const { data, error, count } = await query.range(from, from + PAGE_SIZE - 1);
@@ -114,11 +118,56 @@ export default function ProductManagement() {
   }, [debouncedSearch, filterCategory, filterStatus, page, sortBy, toast]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  useEffect(() => { setSelectedIds(new Set()); }, [page, filterCategory, filterStatus, sortBy, debouncedSearch]);
 
-  const handleDelete = async (id: string, name: string) => {
+  const handleArchive = async (id: string, name: string) => {
     const { error } = await supabase.from("products").update({ is_active: false, status: "archived" }).eq("id", id);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
     toast({ title: `"${name}" archived` });
+    fetchProducts();
+  };
+
+  const handleHardDelete = async (id: string, name: string) => {
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    toast({ title: `"${name}" deleted permanently` });
+    setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+    fetchProducts();
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev =>
+      prev.size === products.length ? new Set() : new Set(products.map(p => p.id))
+    );
+  };
+
+  const handleBulkArchive = async () => {
+    setBulkActing(true);
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from("products").update({ is_active: false, status: "archived" }).in("id", ids);
+    setBulkActing(false);
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    toast({ title: `${ids.length} product${ids.length !== 1 ? "s" : ""} archived` });
+    setSelectedIds(new Set());
+    fetchProducts();
+  };
+
+  const handleBulkDelete = async () => {
+    setBulkActing(true);
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from("products").delete().in("id", ids);
+    setBulkActing(false);
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    toast({ title: `${ids.length} product${ids.length !== 1 ? "s" : ""} deleted permanently` });
+    setSelectedIds(new Set());
     fetchProducts();
   };
 
@@ -173,11 +222,52 @@ export default function ProductManagement() {
         </Select>
       </div>
 
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border bg-muted/40 px-4 py-2.5">
+          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button variant="outline" size="sm" className="gap-1.5 h-8" disabled={bulkActing} onClick={handleBulkArchive}>
+              <Archive className="h-3.5 w-3.5" /> Archive
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5 h-8 text-destructive hover:text-destructive" disabled={bulkActing}>
+                  <Trash2 className="h-3.5 w-3.5" /> Delete permanently
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {selectedIds.size} product{selectedIds.size !== 1 ? "s" : ""} permanently?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This cannot be undone. All variants and images for the selected products will be permanently removed.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Delete permanently
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedIds(new Set())}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
         {/* Table header */}
         <div className="grid items-center px-5 py-2.5 border-b bg-muted/30 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground select-none"
-          style={{ gridTemplateColumns: "2.5rem 1fr 9rem 6rem 7rem 6rem 5rem" }}>
+          style={{ gridTemplateColumns: "1.75rem 2.5rem 1fr 9rem 6rem 7rem 6rem 5rem" }}>
+          <Checkbox
+            checked={products.length > 0 && selectedIds.size === products.length}
+            onCheckedChange={toggleSelectAll}
+            aria-label="Select all"
+          />
           <span />
           <span>Product</span>
           <span>Category</span>
@@ -226,7 +316,12 @@ export default function ProductManagement() {
               return (
                 <div key={p.id}
                   className="grid items-center px-5 py-3 border-b last:border-b-0 hover:bg-muted/20 transition-colors group"
-                  style={{ gridTemplateColumns: "2.5rem 1fr 9rem 6rem 7rem 6rem 5rem" }}>
+                  style={{ gridTemplateColumns: "1.75rem 2.5rem 1fr 9rem 6rem 7rem 6rem 5rem" }}>
+                  <Checkbox
+                    checked={selectedIds.has(p.id)}
+                    onCheckedChange={() => toggleSelected(p.id)}
+                    aria-label={`Select ${p.name}`}
+                  />
                   {/* Thumbnail */}
                   <div className="w-9 h-9 rounded-lg overflow-hidden border bg-muted/30 shrink-0">
                     {p.images?.[0]
@@ -279,22 +374,47 @@ export default function ProductManagement() {
                       onClick={() => navigate(`/admin/products/${p.id}`)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
+                    {p.status !== "archived" && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                            title="Archive">
+                            <Archive className="h-3.5 w-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Archive "{p.name}"?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will hide the product from your store. You can reactivate it anytime from the product editor.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleArchive(p.id, p.name)}>Archive</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                          title="Delete permanently">
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Archive "{p.name}"?</AlertDialogTitle>
+                          <AlertDialogTitle>Delete "{p.name}" permanently?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will hide the product from your store. You can reactivate it anytime from the product editor.
+                            This cannot be undone. All variants and images for this product will be permanently removed.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDelete(p.id, p.name)}>Archive</AlertDialogAction>
+                          <AlertDialogAction onClick={() => handleHardDelete(p.id, p.name)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Delete permanently
+                          </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>

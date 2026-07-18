@@ -54,6 +54,7 @@ interface ProductForm {
   tags: string[];
   status: "draft" | "active" | "archived";
   images: string[];
+  is_featured: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -104,7 +105,7 @@ export default function AddEditProduct() {
 
   const [form, setForm] = useState<ProductForm>({
     name: "", description: "", category_id: "", brand: "",
-    tags: [], status: "draft", images: [],
+    tags: [], status: "draft", images: [], is_featured: false,
   });
   const [tagInput, setTagInput] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
@@ -158,6 +159,7 @@ export default function AddEditProduct() {
         tags: product.tags || [],
         status: (product.status as "draft" | "active" | "archived") || (product.is_active ? "active" : "draft"),
         images: product.images || [],
+        is_featured: product.is_featured ?? false,
       });
       const isSimpleProduct = variantData && variantData.length === 1
         && variantData[0].color === "Default" && variantData[0].size === "Default";
@@ -190,7 +192,7 @@ export default function AddEditProduct() {
           low_stock_threshold: v.low_stock_threshold,
           barcode: v.barcode ?? "",
           weight: v.weight ? String(v.weight) : "",
-          images: v.images || [],
+          images: (v as { images?: string[] }).images || [],
           track_inventory: v.track_inventory ?? true,
           status: "active" as const,
           expanded: false,
@@ -365,6 +367,7 @@ export default function AddEditProduct() {
         base_price: computedBasePrice,
         images: form.images,
         is_active: saveStatus === "active",
+        is_featured: form.is_featured,
       };
 
       let pid = id;
@@ -745,14 +748,14 @@ export default function AddEditProduct() {
                         </div>
 
                         {/* Table header */}
-                        <div className="grid items-center px-5 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-b bg-muted/20 select-none"
+                        <div className="grid items-center px-5 py-2 gap-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-b bg-muted/20 select-none"
                           style={{ gridTemplateColumns: "1.25rem 1fr 7.5rem 5.5rem 5.5rem 4rem 5rem 2rem" }}>
                           <span />
-                          <span>Variant</span>
-                          <span>SKU</span>
-                          <span className="text-right">Price</span>
-                          <span className="text-right">Compare-at</span>
-                          <span className="text-right">Qty</span>
+                          <span className="text-center">Variant</span>
+                          <span className="text-center">SKU</span>
+                          <span className="text-center">Price</span>
+                          <span className="text-center">Compare-at</span>
+                          <span className="text-center">Qty</span>
                           <span className="text-center">Status</span>
                           <span />
                         </div>
@@ -768,7 +771,7 @@ export default function AddEditProduct() {
                             >
                               <ChevronRight className={cn("h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-150", v.expanded && "rotate-90")} />
 
-                              <div className="flex items-center gap-2 min-w-0">
+                              <div className="flex items-center justify-center gap-2 min-w-0">
                                 {getColorSwatch(v.color) && (
                                   <span className="w-4 h-4 rounded-full border border-black/10 shrink-0 shadow-sm"
                                     style={{ background: getColorSwatch(v.color)! }} />
@@ -776,12 +779,12 @@ export default function AddEditProduct() {
                                 <span className="text-sm font-medium truncate">{v.label}</span>
                               </div>
 
-                              <span className="text-xs text-muted-foreground font-mono truncate">
+                              <span className="text-xs text-muted-foreground font-mono truncate text-center">
                                 {v.sku || <span className="italic opacity-40">—</span>}
                               </span>
-                              <span className="text-sm tabular-nums text-right">{v.price_override != null ? `₹${v.price_override}` : <span className="text-muted-foreground/50">—</span>}</span>
-                              <span className="text-sm text-muted-foreground tabular-nums text-right">{v.compare_at_price != null ? `₹${v.compare_at_price}` : <span className="opacity-40">—</span>}</span>
-                              <span className="text-sm tabular-nums text-right">{v.stock_quantity}</span>
+                              <span className="text-sm tabular-nums text-center">{v.price_override != null ? `₹${v.price_override}` : <span className="text-muted-foreground/50">—</span>}</span>
+                              <span className="text-sm text-muted-foreground tabular-nums text-center">{v.compare_at_price != null ? `₹${v.compare_at_price}` : <span className="opacity-40">—</span>}</span>
+                              <span className="text-sm tabular-nums text-center">{v.stock_quantity}</span>
                               <span className={cn(
                                 "text-[11px] px-2 py-0.5 rounded-full font-medium inline-flex items-center justify-center w-fit mx-auto gap-1",
                                 v.status === "active"
@@ -1001,6 +1004,14 @@ export default function AddEditProduct() {
                   <p className="text-[11px] text-muted-foreground">
                     {form.status === "active" ? "Visible to customers on your store." : form.status === "draft" ? "Hidden from store. Save progress freely." : "Removed from store listings."}
                   </p>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="is-featured" className="text-sm font-medium">Featured</Label>
+                      <p className="text-[11px] text-muted-foreground">Show on the homepage "Featured Pieces" section.</p>
+                    </div>
+                    <Switch id="is-featured" checked={form.is_featured} onCheckedChange={v => updateForm("is_featured", v)} />
+                  </div>
                 </div>
 
                 {/* Organization */}
