@@ -84,6 +84,29 @@ function generateSku(productName: string, color: string, size: string, index: nu
   return `${name}-${c}-${s}-${String(index + 1).padStart(2, "0")}`;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof (error as { message: unknown }).message === "string") {
+    return (error as { message: string }).message;
+  }
+  return "Unknown error";
+}
+
+const MISSING_API_KEY_PATTERN = /api ?key/i;
+
+// The Supabase request occasionally reaches the gateway without its `apikey` header
+// (seen with some browser privacy/ad-blocking extensions stripping it) and gets
+// rejected before ever touching the database — safe to transparently retry once,
+// since nothing was applied server-side on that failed attempt.
+async function withApiKeyRetry<T>(request: () => PromiseLike<{ data: T; error: any }>): Promise<{ data: T; error: any }> {
+  const first = await request();
+  if (first.error && MISSING_API_KEY_PATTERN.test(String(first.error.message ?? ""))) {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return request();
+  }
+  return first;
+}
+
 function createEmptyVariant(color: string, size: string, label: string): VariantRow {
   return {
     temp_id: crypto.randomUUID(),
@@ -128,7 +151,6 @@ export default function AddEditProduct() {
   const [bulkPrice, setBulkPrice] = useState("");
   const [bulkCompareAt, setBulkCompareAt] = useState("");
   const [bulkStock, setBulkStock] = useState("");
-  const [bulkSkuPrefix, setBulkSkuPrefix] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
@@ -307,14 +329,13 @@ export default function AddEditProduct() {
   };
 
   const applyBulk = () => {
-    setVariants(prev => prev.map((v, i) => ({
+    setVariants(prev => prev.map(v => ({
       ...v,
       ...(bulkPrice !== "" && { price_override: Number(bulkPrice) }),
       ...(bulkCompareAt !== "" && { compare_at_price: Number(bulkCompareAt) }),
       ...(bulkStock !== "" && { stock_quantity: Number(bulkStock) }),
-      ...(bulkSkuPrefix !== "" && { sku: `${bulkSkuPrefix}-${String(i + 1).padStart(2, "0")}` }),
     })));
-    setBulkPrice(""); setBulkCompareAt(""); setBulkStock(""); setBulkSkuPrefix("");
+    setBulkPrice(""); setBulkCompareAt(""); setBulkStock("");
     toast({ title: "Bulk update applied to all variants" });
   };
 
@@ -340,6 +361,7 @@ export default function AddEditProduct() {
     if (!form.name.trim()) { toast({ title: "Product name is required", variant: "destructive" }); return; }
     const variantsToSave = hasVariants && variantsGenerated ? variants : null;
     if (variantsToSave) {
+      const seenSkus = new Set<string>();
       for (const v of variantsToSave) {
         if (!v.sku.trim()) { toast({ title: `SKU required for variant "${v.label}"`, variant: "destructive" }); return; }
         if (v.price_override == null) { toast({ title: `Price required for variant "${v.label}"`, variant: "destructive" }); return; }
@@ -347,12 +369,47 @@ export default function AddEditProduct() {
           toast({ title: `Compare-at price must be higher than the price for variant "${v.label}"`, variant: "destructive" });
           return;
         }
+        const skuKey = v.sku.trim().toUpperCase();
+        if (seenSkus.has(skuKey)) {
+          toast({ title: `SKU "${v.sku.trim()}" is used by more than one variant here`, variant: "destructive" });
+          return;
+        }
+        seenSkus.add(skuKey);
       }
     } else if (simplePrice == null) {
       toast({ title: "Price is required", variant: "destructive" }); return;
     }
+    const finalVariants = variantsToSave ?? [{
+      ...createEmptyVariant("Default", "Default", "Default"),
+      sku: normalizeSkuPart(form.name).slice(0, 12) + "-DEFAULT",
+      price_override: simplePrice,
+      compare_at_price: simpleCompareAtPrice,
+      stock_quantity: simpleStock,
+      low_stock_threshold: simpleLowStockThreshold,
+    }];
+
     setSaving(true);
     try {
+      // sku is unique across the whole catalog, not just this product — check for
+      // collisions up front so a duplicate (e.g. from Auto-SKU on near-identical
+      // products) surfaces as a clear message instead of a raw DB constraint error.
+      const skus = finalVariants.map(v => v.sku.trim());
+      const { data: conflicting, error: conflictError } = await withApiKeyRetry(() => {
+        let q = supabase.from("variants").select("sku, product_id").in("sku", skus);
+        if (isEdit) q = q.neq("product_id", id!);
+        return q;
+      });
+      if (conflictError) throw conflictError;
+      if (conflicting && conflicting.length > 0) {
+        toast({
+          title: `SKU "${conflicting[0].sku}" is already used by another product`,
+          description: "SKUs must be unique across your whole catalog. Change it and try again.",
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
       const computedBasePrice = variantsToSave
         ? Math.min(...variantsToSave.map(v => v.price_override!))
         : simplePrice!;
@@ -372,22 +429,13 @@ export default function AddEditProduct() {
 
       let pid = id;
       if (isEdit) {
-        const { error } = await supabase.from("products").update(productPayload).eq("id", id!);
+        const { error } = await withApiKeyRetry(() => supabase.from("products").update(productPayload).eq("id", id!));
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from("products").insert(productPayload).select("id").single();
+        const { data, error } = await withApiKeyRetry(() => supabase.from("products").insert(productPayload).select("id").single());
         if (error || !data) throw error || new Error("Failed to create product");
         pid = data.id;
       }
-
-      const finalVariants = variantsToSave ?? [{
-        ...createEmptyVariant("Default", "Default", "Default"),
-        sku: normalizeSkuPart(form.name).slice(0, 12) + "-DEFAULT",
-        price_override: simplePrice,
-        compare_at_price: simpleCompareAtPrice,
-        stock_quantity: simpleStock,
-        low_stock_threshold: simpleLowStockThreshold,
-      }];
 
       const variantsPayload = finalVariants.map(v => ({
         id: v.id ?? null,
@@ -401,16 +449,16 @@ export default function AddEditProduct() {
         weight: v.weight ? Number(v.weight) : null,
         track_inventory: v.track_inventory,
       }));
-      const { error: variantError } = await supabase.rpc("replace_product_variants", {
+      const { error: variantError } = await withApiKeyRetry(() => supabase.rpc("replace_product_variants", {
         p_product_id: pid!,
         p_variants: variantsPayload,
-      });
+      }));
       if (variantError) throw variantError;
 
       toast({ title: saveStatus === "active" ? "Product published!" : "Draft saved" });
       navigate("/admin/products");
     } catch (error) {
-      toast({ title: "Save failed", description: error instanceof Error ? error.message : "Unknown error", variant: "destructive" });
+      toast({ title: "Save failed", description: getErrorMessage(error), variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -740,9 +788,8 @@ export default function AddEditProduct() {
                           <Input value={bulkPrice} onChange={e => setBulkPrice(e.target.value)} placeholder="Price" type="number" className="h-7 w-20 text-xs" />
                           <Input value={bulkCompareAt} onChange={e => setBulkCompareAt(e.target.value)} placeholder="Compare-at" type="number" className="h-7 w-24 text-xs" />
                           <Input value={bulkStock} onChange={e => setBulkStock(e.target.value)} placeholder="Stock" type="number" className="h-7 w-20 text-xs" />
-                          <Input value={bulkSkuPrefix} onChange={e => setBulkSkuPrefix(e.target.value)} placeholder="SKU prefix" className="h-7 w-28 text-xs" />
                           <Button type="button" variant="secondary" size="sm" className="h-7 text-xs px-3" onClick={applyBulk}
-                            disabled={!bulkPrice && !bulkCompareAt && !bulkStock && !bulkSkuPrefix}>
+                            disabled={!bulkPrice && !bulkCompareAt && !bulkStock}>
                             Apply to all
                           </Button>
                         </div>
