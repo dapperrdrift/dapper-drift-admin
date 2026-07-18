@@ -55,6 +55,7 @@ interface ProductForm {
   status: "draft" | "active" | "archived";
   images: string[];
   is_featured: boolean;
+  slug: string | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -84,6 +85,10 @@ function generateSku(productName: string, color: string, size: string, index: nu
   return `${name}-${c}-${s}-${String(index + 1).padStart(2, "0")}`;
 }
 
+function slugify(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "product";
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (error && typeof error === "object" && "message" in error && typeof (error as { message: unknown }).message === "string") {
@@ -107,6 +112,25 @@ async function withApiKeyRetry<T>(request: () => PromiseLike<{ data: T; error: a
   return first;
 }
 
+// products.slug is unique but nullable — the admin form never wrote one, so any
+// product created here was saved with a null slug and became permanently
+// unreachable on the storefront (product pages are looked up by slug). Generate
+// one from the name on first save, and only then, so existing live URLs never change.
+async function generateUniqueSlug(name: string, excludeId?: string): Promise<string> {
+  const base = slugify(name);
+  let candidate = base;
+  let suffix = 2;
+  while (true) {
+    const { data } = await withApiKeyRetry(() => {
+      let q = supabase.from("products").select("id").eq("slug", candidate).limit(1);
+      if (excludeId) q = q.neq("id", excludeId);
+      return q;
+    });
+    if (!data || data.length === 0) return candidate;
+    candidate = `${base}-${suffix++}`;
+  }
+}
+
 function createEmptyVariant(color: string, size: string, label: string): VariantRow {
   return {
     temp_id: crypto.randomUUID(),
@@ -128,7 +152,7 @@ export default function AddEditProduct() {
 
   const [form, setForm] = useState<ProductForm>({
     name: "", description: "", category_id: "", brand: "",
-    tags: [], status: "draft", images: [], is_featured: false,
+    tags: [], status: "draft", images: [], is_featured: false, slug: null,
   });
   const [tagInput, setTagInput] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
@@ -182,6 +206,7 @@ export default function AddEditProduct() {
         status: (product.status as "draft" | "active" | "archived") || (product.is_active ? "active" : "draft"),
         images: product.images || [],
         is_featured: product.is_featured ?? false,
+        slug: product.slug ?? null,
       });
       const isSimpleProduct = variantData && variantData.length === 1
         && variantData[0].color === "Default" && variantData[0].size === "Default";
@@ -414,6 +439,8 @@ export default function AddEditProduct() {
         ? Math.min(...variantsToSave.map(v => v.price_override!))
         : simplePrice!;
 
+      const slug = form.slug ?? await generateUniqueSlug(form.name.trim(), isEdit ? id : undefined);
+
       const productPayload = {
         name: form.name.trim(),
         description: form.description || null,
@@ -425,6 +452,7 @@ export default function AddEditProduct() {
         images: form.images,
         is_active: saveStatus === "active",
         is_featured: form.is_featured,
+        slug,
       };
 
       let pid = id;
