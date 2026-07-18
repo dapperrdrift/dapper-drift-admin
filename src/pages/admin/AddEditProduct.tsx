@@ -338,6 +338,10 @@ export default function AddEditProduct() {
     if (variantsToSave) {
       for (const v of variantsToSave) {
         if (!v.sku.trim()) { toast({ title: `SKU required for variant "${v.label}"`, variant: "destructive" }); return; }
+        if (v.compare_at_price != null && v.price_override != null && v.compare_at_price <= v.price_override) {
+          toast({ title: `Compare-at price must be higher than the price for variant "${v.label}"`, variant: "destructive" });
+          return;
+        }
       }
     }
     setSaving(true);
