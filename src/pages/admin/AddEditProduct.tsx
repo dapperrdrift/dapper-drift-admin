@@ -53,7 +53,6 @@ interface ProductForm {
   brand: string;
   tags: string[];
   status: "draft" | "active" | "archived";
-  base_price: number;
   images: string[];
 }
 
@@ -105,7 +104,7 @@ export default function AddEditProduct() {
 
   const [form, setForm] = useState<ProductForm>({
     name: "", description: "", category_id: "", brand: "",
-    tags: [], status: "draft", base_price: 0, images: [],
+    tags: [], status: "draft", images: [],
   });
   const [tagInput, setTagInput] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
@@ -120,6 +119,8 @@ export default function AddEditProduct() {
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [simpleStock, setSimpleStock] = useState(0);
   const [simpleLowStockThreshold, setSimpleLowStockThreshold] = useState(5);
+  const [simplePrice, setSimplePrice] = useState<number | null>(null);
+  const [simpleCompareAtPrice, setSimpleCompareAtPrice] = useState<number | null>(null);
   const [variantsGenerated, setVariantsGenerated] = useState(false);
   const variantFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -156,7 +157,6 @@ export default function AddEditProduct() {
         brand: product.brand || "",
         tags: product.tags || [],
         status: (product.status as "draft" | "active" | "archived") || (product.is_active ? "active" : "draft"),
-        base_price: product.base_price,
         images: product.images || [],
       });
       const isSimpleProduct = variantData && variantData.length === 1
@@ -166,6 +166,8 @@ export default function AddEditProduct() {
         setHasVariants(false);
         setSimpleStock(variantData[0].stock_quantity);
         setSimpleLowStockThreshold(variantData[0].low_stock_threshold);
+        setSimplePrice(variantData[0].price_override ?? product.base_price);
+        setSimpleCompareAtPrice(variantData[0].compare_at_price ?? null);
       } else if (variantData && variantData.length > 0) {
         const uniqueColors = [...new Set(variantData.map(v => v.color).filter(c => c && c !== "Default"))];
         const uniqueSizes = [...new Set(variantData.map(v => v.size).filter(s => s && s !== "Default"))];
@@ -338,14 +340,21 @@ export default function AddEditProduct() {
     if (variantsToSave) {
       for (const v of variantsToSave) {
         if (!v.sku.trim()) { toast({ title: `SKU required for variant "${v.label}"`, variant: "destructive" }); return; }
+        if (v.price_override == null) { toast({ title: `Price required for variant "${v.label}"`, variant: "destructive" }); return; }
         if (v.compare_at_price != null && v.price_override != null && v.compare_at_price <= v.price_override) {
           toast({ title: `Compare-at price must be higher than the price for variant "${v.label}"`, variant: "destructive" });
           return;
         }
       }
+    } else if (simplePrice == null) {
+      toast({ title: "Price is required", variant: "destructive" }); return;
     }
     setSaving(true);
     try {
+      const computedBasePrice = variantsToSave
+        ? Math.min(...variantsToSave.map(v => v.price_override!))
+        : simplePrice!;
+
       const productPayload = {
         name: form.name.trim(),
         description: form.description || null,
@@ -353,7 +362,7 @@ export default function AddEditProduct() {
         brand: form.brand || null,
         tags: form.tags.length > 0 ? form.tags : null,
         status: saveStatus,
-        base_price: form.base_price,
+        base_price: computedBasePrice,
         images: form.images,
         is_active: saveStatus === "active",
       };
@@ -371,7 +380,8 @@ export default function AddEditProduct() {
       const finalVariants = variantsToSave ?? [{
         ...createEmptyVariant("Default", "Default", "Default"),
         sku: normalizeSkuPart(form.name).slice(0, 12) + "-DEFAULT",
-        price_override: form.base_price,
+        price_override: simplePrice,
+        compare_at_price: simpleCompareAtPrice,
         stock_quantity: simpleStock,
         low_stock_threshold: simpleLowStockThreshold,
       }];
@@ -428,6 +438,10 @@ export default function AddEditProduct() {
 
   const missingSku = variants.filter(v => !v.sku.trim()).length;
   const totalStock = variants.reduce((s, v) => s + v.stock_quantity, 0);
+  const variantPrices = variants.map(v => v.price_override).filter((p): p is number => p != null);
+  const previewPrice = hasVariants && variantsGenerated && variantPrices.length > 0
+    ? Math.min(...variantPrices)
+    : simplePrice;
 
   return (
     <div className="-m-6 flex flex-col bg-muted/20" style={{ minHeight: "calc(100vh - 3.5rem)" }}>
@@ -721,7 +735,7 @@ export default function AddEditProduct() {
                         <div className="px-6 py-2.5 bg-muted/30 border-b flex flex-wrap items-center gap-2">
                           <span className="text-[11px] font-semibold text-muted-foreground mr-0.5">Bulk edit:</span>
                           <Input value={bulkPrice} onChange={e => setBulkPrice(e.target.value)} placeholder="Price" type="number" className="h-7 w-20 text-xs" />
-                          <Input value={bulkCompareAt} onChange={e => setBulkCompareAt(e.target.value)} placeholder="Sale price" type="number" className="h-7 w-24 text-xs" />
+                          <Input value={bulkCompareAt} onChange={e => setBulkCompareAt(e.target.value)} placeholder="Compare-at" type="number" className="h-7 w-24 text-xs" />
                           <Input value={bulkStock} onChange={e => setBulkStock(e.target.value)} placeholder="Stock" type="number" className="h-7 w-20 text-xs" />
                           <Input value={bulkSkuPrefix} onChange={e => setBulkSkuPrefix(e.target.value)} placeholder="SKU prefix" className="h-7 w-28 text-xs" />
                           <Button type="button" variant="secondary" size="sm" className="h-7 text-xs px-3" onClick={applyBulk}
@@ -737,7 +751,7 @@ export default function AddEditProduct() {
                           <span>Variant</span>
                           <span>SKU</span>
                           <span className="text-right">Price</span>
-                          <span className="text-right">Sale price</span>
+                          <span className="text-right">Compare-at</span>
                           <span className="text-right">Qty</span>
                           <span className="text-center">Status</span>
                           <span />
@@ -926,11 +940,23 @@ export default function AddEditProduct() {
                   </>
                 )}
 
-                {/* No variants: simple stock */}
+                {/* No variants: simple price + stock */}
                 {!hasVariants && (
                   <div className="px-6 pb-6">
                     <Separator className="mb-5" />
                     <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Price (₹) <span className="text-destructive">*</span></Label>
+                        <Input type="number" placeholder="0.00" className="h-9 text-sm"
+                          value={simplePrice ?? ""}
+                          onChange={e => setSimplePrice(e.target.value ? Number(e.target.value) : null)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Compare-at (₹)</Label>
+                        <Input type="number" placeholder="Original for sale badge" className="h-9 text-sm"
+                          value={simpleCompareAtPrice ?? ""}
+                          onChange={e => setSimpleCompareAtPrice(e.target.value ? Number(e.target.value) : null)} />
+                      </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-medium">Stock quantity</Label>
                         <Input type="number" placeholder="0" className="h-9 text-sm"
@@ -977,21 +1003,6 @@ export default function AddEditProduct() {
                   </p>
                 </div>
 
-                {/* Pricing */}
-                <div className="bg-card rounded-xl border shadow-sm p-5 space-y-3">
-                  <h3 className="text-sm font-semibold">Pricing</h3>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium text-muted-foreground">Base price (₹)</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
-                      <Input type="number" value={form.base_price || ""}
-                        onChange={e => updateForm("base_price", Number(e.target.value) || 0)}
-                        placeholder="0.00" className="pl-7 h-9 text-sm" />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">Individual variants can override this price.</p>
-                  </div>
-                </div>
-
                 {/* Organization */}
                 <div className="bg-card rounded-xl border shadow-sm p-5 space-y-4">
                   <h3 className="text-sm font-semibold">Organization</h3>
@@ -1033,8 +1044,8 @@ export default function AddEditProduct() {
                       </p>
                       {form.brand && <p className="text-xs text-muted-foreground mt-0.5">{form.brand}</p>}
                       <p className="text-base font-bold mt-1.5">
-                        {form.base_price > 0
-                          ? `₹${form.base_price.toLocaleString("en-IN")}`
+                        {previewPrice != null && previewPrice > 0
+                          ? `₹${previewPrice.toLocaleString("en-IN")}`
                           : <span className="text-sm text-muted-foreground/50 font-normal italic">No price set</span>}
                       </p>
 
