@@ -188,8 +188,23 @@ export default function OrderManagement() {
       const { error } = await supabase.functions.invoke("schedule-shiprocket-pickup", {
         body: { orderId },
       });
-      if (error) throw error;
-      toast({ title: "Pickup requested", description: "Shiprocket will schedule a pickup. Status will update via webhook." });
+      if (error) {
+        // supabase-js wraps non-2xx responses; the useful message is in the response body.
+        let message = error.message;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ctx = (error as any).context;
+        if (ctx && typeof ctx.json === "function") {
+          try {
+            const body = await ctx.json();
+            if (body?.error) message = body.error;
+          } catch {
+            /* keep the default message */
+          }
+        }
+        throw new Error(message);
+      }
+      toast({ title: "Pickup scheduled", description: "Shiprocket order created, AWB assigned and pickup requested." });
+      fetchOrders();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       toast({ title: "Pickup request failed", description: message, variant: "destructive" });

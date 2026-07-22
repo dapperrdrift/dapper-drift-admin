@@ -78,11 +78,20 @@ function normalizeSkuPart(value: string): string {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "X";
 }
 
-function generateSku(productName: string, color: string, size: string, index: number): string {
+// Same product name + color + size (e.g. two "Waffle Boxy Fit..." products in the
+// same color) used to produce identical SKUs across products because the trailing
+// part was just a per-product variant index (-01, -02...) — not actually unique.
+// A random 3-digit number makes every generated SKU unique per variant instead.
+function generateSku(productName: string, color: string, size: string, usedSuffixes: Set<string> = new Set()): string {
   const name = normalizeSkuPart(productName).slice(0, 10);
   const c = normalizeSkuPart(color).slice(0, 6);
   const s = normalizeSkuPart(size).slice(0, 4);
-  return `${name}-${c}-${s}-${String(index + 1).padStart(2, "0")}`;
+  let suffix: string;
+  do {
+    suffix = String(Math.floor(100 + Math.random() * 900));
+  } while (usedSuffixes.has(suffix));
+  usedSuffixes.add(suffix);
+  return `${name}-${c}-${s}-${suffix}`;
 }
 
 function slugify(name: string): string {
@@ -349,7 +358,8 @@ export default function AddEditProduct() {
 
   const autoSkuAll = () => {
     if (!form.name.trim()) { toast({ title: "Enter a product name first", variant: "destructive" }); return; }
-    setVariants(prev => prev.map((v, i) => ({ ...v, sku: generateSku(form.name, v.color, v.size, i) })));
+    const usedSuffixes = new Set<string>();
+    setVariants(prev => prev.map(v => ({ ...v, sku: generateSku(form.name, v.color, v.size, usedSuffixes) })));
     toast({ title: "SKUs generated for all variants" });
   };
 
@@ -890,8 +900,7 @@ export default function AddEditProduct() {
                                         placeholder="Unique identifier" className="h-8 text-xs font-mono flex-1" />
                                       <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs shrink-0"
                                         onClick={() => {
-                                          const idx = variants.findIndex(x => x.temp_id === v.temp_id);
-                                          updateVariant(v.temp_id, "sku", generateSku(form.name, v.color, v.size, idx));
+                                          updateVariant(v.temp_id, "sku", generateSku(form.name, v.color, v.size));
                                         }}>
                                         Auto
                                       </Button>
